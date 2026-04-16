@@ -1,78 +1,119 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, BarChart3, Binary, Briefcase } from 'lucide-react';
+import { useStore } from './store/useStore';
+import { initWebSocket } from './services/websocket';
 import './App.css';
-import { Activity, Wallet, Bot, LineChart } from 'lucide-react';
+
+// Components
+import SetupWizard from './components/SetupWizard';
 import Dashboard from './components/Dashboard';
 import BacktestModule from './components/BacktestModule';
-import SetupWizard from './components/SetupWizard';
+import AgentsPage from './components/AgentsPage';
+import DataLabPage from './components/DataLabPage';
+import IntelligencePage from './components/IntelligencePage';
+import PortfolioPage from './components/PortfolioPage';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [isConfigured, setIsConfigured] = useState(false);
-  const [checking, setChecking] = useState(true);
+  const { isConfigured, setIsConfigured, isLiveMode, toggleTradingMode, tutorialsActive, toggleTutorials } = useStore();
 
-  // Check if backend is configured
+  // Initial Boot Check
   useEffect(() => {
     fetch('http://localhost:3001/api/status')
       .then(res => res.json())
       .then(data => {
-        setIsConfigured(data.isConfigured);
-        setChecking(false);
+          setIsConfigured(data.isConfigured);
+          if (data.isConfigured) {
+              initWebSocket();
+          }
       })
-      .catch((err) => {
-        console.error("Backend offline", err);
-        setChecking(false);
-      });
-  }, []);
-
-  if (checking) return null; // or loading spinner
+      .catch(err => console.error("Backend offline", err));
+  }, [setIsConfigured]);
 
   if (!isConfigured) {
     return (
         <div className="app-container">
-            <SetupWizard onComplete={() => setIsConfigured(true)} />
+            <SetupWizard onComplete={() => {
+                setIsConfigured(true);
+                initWebSocket();
+            }} />
         </div>
     );
   }
 
   return (
-    <div className="app-container">
-      <nav className="navbar">
-        <div className="brand">
-          <Bot className="logo-icon" size={28} />
-          <span className="brand-name text-gradient">Kalshi AI - Functional Edition</span>
-        </div>
-        
-        <div className="nav-links">
-          <div 
-            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
-          >
-            Live Paper Trading & AI
+    <BrowserRouter>
+      <div className={`app-container ${isLiveMode ? 'live-mode' : 'paper-mode'}`}>
+        {/* Universal Top Bar */}
+        <nav className="navbar top-nav">
+          <div className="brand">
+            <Bot className="logo-icon pulse" size={28} />
+            <div className="brand-text">
+                <span className="brand-name text-gradient">Kalshi Enterprise</span>
+                <span className="version-tag">Build: Zenith-V1</span>
+            </div>
           </div>
-          <div 
-            className={`nav-item ${activeTab === 'backtest' ? 'active' : ''}`}
-            onClick={() => setActiveTab('backtest')}
-          >
-            Backtesting
+          
+          <div className="system-controls">
+            {/* The Master Toggle */}
+            <div className="mode-toggle-container" onClick={toggleTradingMode}>
+                <div className={`mode-pill ${isLiveMode ? 'live' : 'paper'}`}>
+                    {isLiveMode ? <ShieldAlert size={16}/> : <Binary size={16}/>}
+                    {isLiveMode ? 'LIVE EXECUTION' : 'PAPER SIMULATION'}
+                </div>
+            </div>
+
+            <button 
+                className={`tutorial-btn ${tutorialsActive ? 'active' : ''}`}
+                onClick={toggleTutorials}
+            >
+                <BookOpen size={18} />
+            </button>
+
+            <div className="secure-badge">
+                <ShieldAlert size={14} color="var(--accent-green)"/>
+                <span>Encrypted Enclave Active</span>
+            </div>
           </div>
+        </nav>
+
+        <div className="app-layout">
+            {/* App Navigation (Sidebar on Desktop, Bottom Tab Bar on Mobile) */}
+            <nav className="app-navigation">
+                 <NavLink to="/" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
+                    <LayoutDashboard size={22}/> <span className="nav-label">Terminal</span>
+                 </NavLink>
+                 <NavLink to="/portfolio" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
+                    <Briefcase size={22}/> <span className="nav-label">Portfolio</span>
+                 </NavLink>
+                 <NavLink to="/intelligence" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
+                    <BrainCircuit size={22}/> <span className="nav-label">Intelligence</span>
+                 </NavLink>
+                 <NavLink to="/agents" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
+                    <Activity size={22}/> <span className="nav-label">Agents</span>
+                 </NavLink>
+                 <NavLink to="/datalab" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
+                    <BarChart3 size={22}/> <span className="nav-label">Data Lab</span>
+                 </NavLink>
+                 <NavLink to="/backtest" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
+                    <Binary size={22}/> <span className="nav-label">Backtest</span>
+                 </NavLink>
+            </nav>
+
+            {/* Main Content Area */}
+            <main className="main-content-area">
+                <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/portfolio" element={<PortfolioPage />} />
+                    <Route path="/intelligence" element={<IntelligencePage />} />
+                    <Route path="/agents" element={<AgentsPage />} />
+                    <Route path="/datalab" element={<DataLabPage />} />
+                    <Route path="/backtest" element={<BacktestModule />} />
+                </Routes>
+            </main>
         </div>
-
-        <button 
-          className="connect-btn"
-          style={{ background: 'rgba(48, 209, 88, 0.2)', color: 'var(--accent-green)', outline: '1px solid var(--accent-green)'}}
-        >
-          Secure Session Active
-        </button>
-      </nav>
-
-      <main className="main-content">
-        {activeTab === 'dashboard' ? (
-          <Dashboard isConnected={isConfigured} />
-        ) : (
-          <BacktestModule />
-        )}
-      </main>
-    </div>
+      </div>
+    </BrowserRouter>
   );
 }
 

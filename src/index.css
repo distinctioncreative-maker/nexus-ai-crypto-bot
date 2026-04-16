@@ -51,15 +51,22 @@ body {
   line-height: 1.5;
   overflow-x: hidden;
   min-height: 100vh;
+  /* iOS smooth scrolling and touch rules */
+  -webkit-overflow-scrolling: touch;
+  touch-action: manipulation;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 .glass-panel {
   background: var(--card-bg);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--card-border);
-  border-radius: 16px;
+  border-radius: 20px;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  /* GPU acceleration for iOS blur rendering */
+  transform: translateZ(0);
   transition: border-color 0.2s ease;
 }
 

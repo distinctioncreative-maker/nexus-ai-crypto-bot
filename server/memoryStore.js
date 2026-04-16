@@ -1,6 +1,5 @@
 // Secure In-Memory Store
 // Keys stored here are destroyed when the node process stops.
-// This prevents keys from sitting idle on a hard drive.
 
 class MemoryStore {
     constructor() {
@@ -10,10 +9,16 @@ class MemoryStore {
             openAiApiKey: null
         };
         this.paperTradingState = {
-            balance: 100000.00, // Start with $100k virtual cash
+            initalBalance: 100000.00,
+            balance: 100000.00, // Virtual cash
             btcHoldings: 0,
             trades: [],
-            learningHistory: [] // AI Auto-Enhancing memory map
+            learningHistory: []
+        };
+        this.circuitBreaker = {
+            tripped: false,
+            maxDrawdownPercent: 5.0, // Hard stop if portfolio drops 5% below initial
+            reason: ""
         };
     }
 
@@ -32,10 +37,33 @@ class MemoryStore {
     }
 
     getPaperState() {
-        return this.paperTradingState;
+        return {
+            ...this.paperTradingState,
+            circuitBreaker: this.circuitBreaker
+        };
+    }
+
+    checkCircuitBreaker(currentPrice) {
+        if (this.circuitBreaker.tripped) return true;
+        
+        const totalValue = this.paperTradingState.balance + (this.paperTradingState.btcHoldings * currentPrice);
+        const drawdown = ((this.paperTradingState.initalBalance - totalValue) / this.paperTradingState.initalBalance) * 100;
+        
+        if (drawdown >= this.circuitBreaker.maxDrawdownPercent) {
+            this.circuitBreaker.tripped = true;
+            this.circuitBreaker.reason = `HARD STOP: ${drawdown.toFixed(2)}% Drawdown detected. Exceeds ${this.circuitBreaker.maxDrawdownPercent}% limit. AI Execution Halted.`;
+            this.recordLearning(this.circuitBreaker.reason);
+            console.error("🛑 CIRCUIT BREAKER TRIPPED! TRADING HALTED.");
+            return true;
+        }
+        return false;
     }
 
     executePaperTrade(type, amount, price, reason) {
+        if (this.checkCircuitBreaker(price)) {
+            return false; // Blocked by circuit breaker
+        }
+
         const cost = amount * price;
         if (type === 'BUY' && this.paperTradingState.balance >= cost) {
             this.paperTradingState.balance -= cost;
@@ -57,12 +85,7 @@ class MemoryStore {
         };
         
         this.paperTradingState.trades.unshift(trade);
-        
-        // Keep last 50 trades in memory
-        if (this.paperTradingState.trades.length > 50) {
-            this.paperTradingState.trades.pop();
-        }
-
+        if (this.paperTradingState.trades.length > 50) this.paperTradingState.trades.pop();
         return trade;
     }
 
