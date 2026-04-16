@@ -17,8 +17,11 @@
   --accent-purple: #BF5AF2;
   --accent-purple-dim: rgba(191, 90, 242, 0.12);
   --accent-orange: #FF9F0A;
+  --accent-gold: #D4AF37;
+  --accent-gold-dim: rgba(212, 175, 55, 0.12);
 
-  --font-ui: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-ui: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Syne', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
 }
 
@@ -27,6 +30,21 @@
 body {
   font-family: var(--font-ui);
   background-color: var(--bg-color);
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 40px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 40px
+    );
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -70,8 +88,19 @@ body {
   100% { box-shadow: 0 0 0 0 rgba(191, 90, 242, 0); }
 }
 
+@keyframes pulseGlowGold {
+  0% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.5); }
+  70% { box-shadow: 0 0 0 5px rgba(212, 175, 55, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
+}
+
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-12px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -83,6 +112,11 @@ body {
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
 }
 
 .live-indicator {

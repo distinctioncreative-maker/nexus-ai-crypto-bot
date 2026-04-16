@@ -3,7 +3,7 @@ import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { Activity, Brain, BookOpen, TrendingUp, TrendingDown } from 'lucide-react';
+import { Activity, Brain, BookOpen, TrendingUp, ArrowUpRight } from 'lucide-react';
 import { useMarketData, ASSETS } from '../hooks/useMarketData';
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
@@ -63,9 +63,17 @@ function AIReasoningPanel({ aiStatus, aiThoughts, isConnected }) {
       }} />
 
       <div className="widget-header">
-        <span className="widget-title" style={{ color: 'var(--accent-purple)' }}>
-          <Brain size={13} /> Neural Engine
-        </span>
+        <div>
+          <span className="widget-title" style={{ color: 'var(--accent-purple)' }}>
+            <Brain size={13} /> Neural Engine
+          </span>
+          <div style={{
+            fontSize: '0.6rem', color: 'var(--text-secondary)',
+            marginTop: '0.2rem', paddingLeft: '1px',
+          }}>
+            AI is currently thinking:
+          </div>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           {isConnected && <span className="live-indicator-purple" />}
           <span style={{
@@ -83,10 +91,14 @@ function AIReasoningPanel({ aiStatus, aiThoughts, isConnected }) {
         {!isConnected ? (
           <div style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', height: '100%', gap: '0.6rem', opacity: 0.35,
+            justifyContent: 'center', height: '100%', gap: '0.75rem', opacity: 0.4,
+            padding: '1.5rem',
           }}>
-            <Brain size={26} color="var(--accent-purple)" />
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Connect exchange to activate</p>
+            <Brain size={28} color="var(--accent-purple)" />
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'center', lineHeight: 1.5 }}>
+              Click "Connect Exchange" in the top right to activate the neural engine
+              <ArrowUpRight size={12} style={{ display: 'inline', marginLeft: '0.25rem', verticalAlign: 'middle' }} />
+            </p>
           </div>
         ) : (
           aiThoughts.map((t, i) => (
@@ -143,7 +155,9 @@ function OrderBook({ orderBook, currentPrice, activeAsset }) {
             textTransform: 'uppercase', color: 'var(--accent-red)',
             marginBottom: '0.35rem', paddingBottom: '0.25rem',
             borderBottom: '1px solid rgba(255,255,255,0.05)',
-          }}>Asks</div>
+          }}>
+            Sell Orders (Asks)
+          </div>
           {orderBook.asks?.slice(0, 7).reverse().map((ask, i) => (
             <div key={i} style={{ position: 'relative', marginBottom: '2px' }}>
               <div style={{
@@ -170,7 +184,9 @@ function OrderBook({ orderBook, currentPrice, activeAsset }) {
             textTransform: 'uppercase', color: 'var(--accent-green)',
             marginBottom: '0.35rem', paddingBottom: '0.25rem',
             borderBottom: '1px solid rgba(255,255,255,0.05)',
-          }}>Bids</div>
+          }}>
+            Buy Orders (Bids)
+          </div>
           {orderBook.bids?.slice(0, 7).map((bid, i) => (
             <div key={i} style={{ position: 'relative', marginBottom: '2px' }}>
               <div style={{
@@ -209,16 +225,26 @@ function RecentTrades({ trades, isConnected }) {
   return (
     <div className="glass-panel widget" style={{ maxHeight: '300px' }}>
       <div className="widget-header">
-        <span className="widget-title"><Activity size={13} /> AI Execution Log</span>
+        <div>
+          <span className="widget-title"><Activity size={13} /> AI Execution Log</span>
+          <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+            Trades placed automatically by your AI agents based on detected signals.
+          </div>
+        </div>
         {isConnected && <span className="live-indicator" />}
       </div>
 
       {!isConnected ? (
         <div style={{
-          flexGrow: 1, display: 'flex', alignItems: 'center',
+          flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
           justifyContent: 'center', color: 'var(--text-secondary)', fontSize: '0.78rem',
+          gap: '0.5rem', padding: '1rem', textAlign: 'center',
         }}>
-          Connect exchange to see live trades
+          <Activity size={22} color="var(--text-tertiary)" />
+          <span>
+            Click "Connect Exchange" in the top right to start the simulation
+            <ArrowUpRight size={13} style={{ display: 'inline', marginLeft: '0.25rem', verticalAlign: 'middle' }} />
+          </span>
         </div>
       ) : (
         <>
@@ -237,7 +263,7 @@ function RecentTrades({ trades, isConnected }) {
             <span>Qty</span>
             <span>Entry</span>
             <span>Exit</span>
-            <span style={{ textAlign: 'right' }}>P&amp;L</span>
+            <span style={{ textAlign: 'right' }}>Profit/Loss</span>
           </div>
 
           <div style={{ overflowY: 'auto', flexGrow: 1 }}>
@@ -254,7 +280,7 @@ function RecentTrades({ trades, isConnected }) {
                 fontSize: '0.7rem',
               }}>
                 <span className={`trade-badge ${trade.type}`}>
-                  {trade.type === 'buy' ? 'LONG' : 'SHORT'}
+                  {trade.type === 'buy' ? 'BUY' : 'SELL'}
                 </span>
                 <span style={{ fontWeight: 700 }}>{trade.asset}</span>
                 <span style={{ color: 'var(--text-secondary)' }}>{trade.amount}</span>
@@ -301,6 +327,32 @@ export default function Dashboard({ isConnected }) {
 
   return (
     <div>
+      {/* Page header */}
+      <div className="page-header">
+        <h1 className="page-title">Terminal</h1>
+        <p className="page-subtitle">Live market data, AI decision stream, and real-time trade execution.</p>
+      </div>
+
+      {/* Color legend */}
+      <div className="color-legend">
+        <div className="legend-item">
+          <span className="legend-dot" style={{ background: 'var(--accent-green)' }} />
+          Green = Profit / Bullish
+        </div>
+        <div className="legend-item">
+          <span className="legend-dot" style={{ background: 'var(--accent-red)' }} />
+          Red = Loss / Bearish
+        </div>
+        <div className="legend-item">
+          <span className="legend-dot" style={{ background: 'var(--accent-purple)' }} />
+          Purple = AI action
+        </div>
+        <div className="legend-item">
+          <span className="legend-dot" style={{ background: 'var(--accent-blue)' }} />
+          Blue = Open position / System
+        </div>
+      </div>
+
       {/* Metric Row */}
       <div className="metrics-container">
         <MetricCard
@@ -316,9 +368,9 @@ export default function Dashboard({ isConnected }) {
           subColor={priceColor}
         />
         <MetricCard
-          label="24h P&L"
+          label="Daily Profit/Loss"
           value={`${dailyPnl >= 0 ? '+' : '-'}$${Math.abs(dailyPnl).toFixed(2)}`}
-          sub={dailyPnl >= 0 ? 'In profit' : 'At loss'}
+          sub={dailyPnl >= 0 ? 'In profit today' : 'At a loss today'}
           subColor={dailyPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}
           valueColor={dailyPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}
         />
@@ -377,6 +429,11 @@ export default function Dashboard({ isConnected }) {
               </span>
             </>
           )}
+          {!isConnected && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-secondary)' }}>
+              SIMULATION PAUSED
+            </span>
+          )}
         </div>
       </div>
 
@@ -386,7 +443,7 @@ export default function Dashboard({ isConnected }) {
         <div className="glass-panel widget" style={{ height: '300px' }}>
           <div className="widget-header">
             <span className="widget-title">
-              <TrendingUp size={13} /> {activeAsset}/USD — 1H
+              <TrendingUp size={13} /> {activeAsset}/USD — 1H Price Chart
             </span>
             <span style={{
               fontFamily: 'var(--font-mono)', fontSize: '0.72rem',

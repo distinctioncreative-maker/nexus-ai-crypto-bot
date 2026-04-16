@@ -43,20 +43,21 @@
 .logo-wrapper {
   width: 32px; height: 32px;
   border-radius: 9px;
-  background: rgba(191, 90, 242, 0.1);
-  border: 1px solid rgba(191, 90, 242, 0.22);
+  background: rgba(212, 175, 55, 0.08);
+  border: 1px solid rgba(212, 175, 55, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 18px rgba(191, 90, 242, 0.12);
+  box-shadow: 0 0 20px rgba(212, 175, 55, 0.1);
 }
 
-.logo-icon { color: var(--accent-purple); }
+.logo-icon { color: var(--accent-gold); }
 
 .brand-name {
+  font-family: var(--font-display);
   font-size: 0.9rem;
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -97,18 +98,45 @@
   left: 50%;
   transform: translateX(-50%);
   width: 18px; height: 2px;
-  background: var(--accent-blue);
+  background: var(--accent-gold);
   border-radius: 2px 2px 0 0;
   animation: fadeIn 0.2s ease;
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.help-btn {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.help-btn:hover {
+  background: rgba(212, 175, 55, 0.1);
+  border-color: rgba(212, 175, 55, 0.3);
+  color: var(--accent-gold);
 }
 
 .connect-btn {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  background: rgba(255, 255, 255, 0.055);
-  color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(212, 175, 55, 0.08);
+  color: var(--accent-gold);
+  border: 1px solid rgba(212, 175, 55, 0.3);
   padding: 0.38rem 0.85rem;
   border-radius: 20px;
   font-weight: 600;
@@ -119,8 +147,8 @@
 }
 
 .connect-btn:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(212, 175, 55, 0.14);
+  border-color: rgba(212, 175, 55, 0.5);
 }
 
 .connect-btn.connected {
@@ -132,8 +160,31 @@
 .dot-offline {
   display: inline-block;
   width: 7px; height: 7px;
-  background: var(--text-secondary);
+  background: var(--accent-gold);
   border-radius: 50%;
+  opacity: 0.7;
+}
+
+/* ─── Page Header ─── */
+.page-header {
+  margin-bottom: 1.5rem;
+}
+
+.page-title {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  line-height: 1.1;
+  margin-bottom: 0.35rem;
+}
+
+.page-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+  line-height: 1.5;
 }
 
 /* ─── Shared Widget Styles ─── */
@@ -219,6 +270,34 @@
 .trade-badge.buy { background: var(--accent-green-dim); color: var(--accent-green); }
 .trade-badge.sell { background: var(--accent-red-dim); color: var(--accent-red); }
 
+/* ─── Color Legend ─── */
+.color-legend {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,255,255,0.02);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.04);
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.legend-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* ─── Responsive ─── */
 @media (max-width: 1100px) {
   .dashboard-grid { grid-template-columns: 1fr; }
@@ -229,4 +308,5 @@
   .metrics-container { grid-template-columns: repeat(2, 1fr); }
   .main-content { padding: 0.75rem; }
   .navbar { padding: 0 1rem; }
+  .nav-links { display: none; }
 }

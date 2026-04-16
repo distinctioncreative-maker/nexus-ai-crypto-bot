@@ -2,20 +2,31 @@ import React, { useState } from 'react';
 import './App.css';
 import { Cpu } from 'lucide-react';
 import Dashboard from './components/Dashboard';
-import BacktestModule from './components/BacktestModule';
 import PortfolioPage from './components/PortfolioPage';
-import AIConfigPage from './components/AIConfigPage';
+import AgentsPage from './components/AgentsPage';
+import IntelligencePage from './components/IntelligencePage';
+import DataLabPage from './components/DataLabPage';
+import Tutorial from './components/Tutorial';
 
 const TABS = [
-  { id: 'dashboard', label: 'Terminal' },
-  { id: 'backtest', label: 'Backtesting' },
-  { id: 'portfolio', label: 'Portfolio' },
-  { id: 'ai-config', label: 'AI Config' },
+  { id: 'dashboard',    label: 'Terminal' },
+  { id: 'agents',       label: 'AI Agents' },
+  { id: 'intelligence', label: 'Intelligence' },
+  { id: 'data-lab',     label: 'Data Lab' },
+  { id: 'portfolio',    label: 'Portfolio' },
 ];
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isConnected, setIsConnected] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(
+    () => !localStorage.getItem('nexus_tutorial_seen')
+  );
+
+  const handleCloseTutorial = () => {
+    localStorage.setItem('nexus_tutorial_seen', '1');
+    setShowTutorial(false);
+  };
 
   return (
     <div className="app-container">
@@ -40,23 +51,35 @@ function App() {
           ))}
         </div>
 
-        <button
-          className={`connect-btn ${isConnected ? 'connected' : ''}`}
-          onClick={() => setIsConnected(v => !v)}
-        >
-          {isConnected
-            ? <><span className="live-indicator" /> Live · Coinbase</>
-            : <><span className="dot-offline" /> Connect Exchange</>
-          }
-        </button>
+        <div className="nav-right">
+          <button
+            className="help-btn"
+            onClick={() => setShowTutorial(true)}
+            title="Show tutorial"
+          >
+            ?
+          </button>
+          <button
+            className={`connect-btn ${isConnected ? 'connected' : ''}`}
+            onClick={() => setIsConnected(v => !v)}
+          >
+            {isConnected
+              ? <><span className="live-indicator" /> Live · Coinbase</>
+              : <><span className="dot-offline" /> Connect Exchange</>
+            }
+          </button>
+        </div>
       </nav>
 
       <main className="main-content">
-        {activeTab === 'dashboard'  && <Dashboard isConnected={isConnected} />}
-        {activeTab === 'backtest'   && <BacktestModule />}
-        {activeTab === 'portfolio'  && <PortfolioPage />}
-        {activeTab === 'ai-config'  && <AIConfigPage isConnected={isConnected} />}
+        {activeTab === 'dashboard'    && <Dashboard isConnected={isConnected} />}
+        {activeTab === 'agents'       && <AgentsPage />}
+        {activeTab === 'intelligence' && <IntelligencePage />}
+        {activeTab === 'data-lab'     && <DataLabPage />}
+        {activeTab === 'portfolio'    && <PortfolioPage />}
       </main>
+
+      {showTutorial && <Tutorial onClose={handleCloseTutorial} />}
     </div>
   );
 }
