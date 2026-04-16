@@ -86,7 +86,7 @@ wss.on('connection', async (ws, req) => {
 });
 
 const PORT = process.env.PORT || 3001;
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = process.env.HOST || (process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : '127.0.0.1');
 server.listen(PORT, HOST, () => {
     console.log(`🚀 Crypto AI Bot Backend running at http://${HOST}:${PORT}`);
 });

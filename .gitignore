@@ -29,3 +29,6 @@ server/.env
 *.sln
 *.sw?
 .vercel
+
+# Supabase local CLI cache
+supabase/.temp/
