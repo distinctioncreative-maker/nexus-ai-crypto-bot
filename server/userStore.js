@@ -62,6 +62,8 @@ class UserStore {
                     trades: [],
                     learningHistory: []
                 },
+                // Per-product holdings: { 'BTC-USD': { assetHoldings: 0, trades: [] }, ... }
+                productHoldings: {},
                 circuitBreaker: {
                     tripped: false,
                     maxDrawdownPercent: 5.0,
@@ -112,9 +114,23 @@ class UserStore {
 
     setSelectedProduct(userId, productId) {
         const user = this._ensureUser(userId);
+
+        // Save current product's state before switching
+        if (user.selectedProduct) {
+            user.productHoldings[user.selectedProduct] = {
+                assetHoldings: user.paperTradingState.assetHoldings,
+                trades: [...user.paperTradingState.trades]
+            };
+        }
+
         user.selectedProduct = productId;
-        user.paperTradingState.assetHoldings = 0;
-        user.paperTradingState.trades = [];
+
+        // Restore the new product's state (or start fresh)
+        const saved = user.productHoldings[productId];
+        user.paperTradingState.assetHoldings = saved?.assetHoldings ?? 0;
+        user.paperTradingState.trades = saved?.trades ? [...saved.trades] : [];
+
+        // Reset circuit breaker per-product
         user.circuitBreaker.tripped = false;
         user.circuitBreaker.reason = '';
     }
@@ -257,6 +273,12 @@ class UserStore {
         user.paperTradingState.trades.unshift(trade);
         if (user.paperTradingState.trades.length > 500) user.paperTradingState.trades.pop();
 
+        // Sync per-product holdings map
+        user.productHoldings[user.selectedProduct] = {
+            assetHoldings: user.paperTradingState.assetHoldings,
+            trades: [...user.paperTradingState.trades]
+        };
+
         // Persist trade to Supabase (fire-and-forget)
         getPersistence().saveTrade(getSupabase(), userId, trade).catch(() => {});
 
@@ -331,6 +353,9 @@ class UserStore {
         }
         if (Array.isArray(loaded.strategies) && loaded.strategies.length > 0) {
             user.strategies = loaded.strategies;
+        }
+        if (loaded.productHoldings && typeof loaded.productHoldings === 'object') {
+            user.productHoldings = loaded.productHoldings;
         }
 
         console.log(`✅ State restored for user ${userId} — balance: $${user.paperTradingState.balance.toFixed(2)}, trades: ${user.paperTradingState.trades.length}`);

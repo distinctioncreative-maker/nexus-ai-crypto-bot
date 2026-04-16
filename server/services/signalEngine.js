@@ -5,6 +5,11 @@ let cache = null;
 let cacheTime = 0;
 const CACHE_TTL = 5 * 60 * 1000;
 
+// Cache news for 10 minutes
+let newsCache = null;
+let newsCacheTime = 0;
+const NEWS_TTL = 10 * 60 * 1000;
+
 async function fetchFearGreed() {
     try {
         const res = await axios.get('https://api.alternative.me/fng/?limit=1', { timeout: 5000 });
@@ -92,4 +97,67 @@ async function getSignals() {
     return cache;
 }
 
-module.exports = { getSignals };
+/**
+ * Fetch real crypto news from CryptoPanic's free public API.
+ * No auth token required for public posts.
+ */
+async function getNews() {
+    const now = Date.now();
+    if (newsCache && (now - newsCacheTime) < NEWS_TTL) return newsCache;
+
+    try {
+        const res = await axios.get(
+            'https://cryptopanic.com/api/v1/posts/?public=true&kind=news&currencies=BTC,ETH,SOL,XRP,ADA,DOGE',
+            { timeout: 8000 }
+        );
+
+        const posts = res.data?.results || [];
+
+        const items = posts.slice(0, 25).map(post => {
+            // Derive sentiment from vote counts
+            const pos = post.votes?.positive || 0;
+            const neg = post.votes?.negative || 0;
+            const total = pos + neg;
+            let sentiment = 'neutral';
+            if (total > 0) {
+                const ratio = pos / total;
+                if (ratio > 0.55) sentiment = 'bullish';
+                else if (ratio < 0.45) sentiment = 'bearish';
+            }
+
+            // Impact score: base 4, boosted by vote volume
+            const votes = post.votes?.liked || 0;
+            const impact = Math.min(10, Math.max(3, 4 + Math.floor(votes / 5)));
+
+            // Affected assets
+            const assets = (post.currencies || []).map(c => c.code).filter(Boolean).slice(0, 4);
+            if (assets.length === 0) assets.push('BTC');
+
+            // Relative time
+            const published = new Date(post.published_at);
+            const diffMin = Math.floor((Date.now() - published.getTime()) / 60000);
+            const time = diffMin < 1 ? 'Just now' : diffMin < 60 ? `${diffMin}m ago` : `${Math.floor(diffMin / 60)}h ago`;
+
+            return {
+                id: post.id,
+                source: post.source?.title || 'CryptoPanic',
+                headline: post.title,
+                sentiment,
+                impact,
+                assets,
+                time,
+                url: post.url
+            };
+        });
+
+        newsCache = items;
+        newsCacheTime = now;
+        return items;
+    } catch (err) {
+        console.error('News fetch error:', err.message);
+        // Return cached if available, else empty
+        return newsCache || [];
+    }
+}
+
+module.exports = { getSignals, getNews };

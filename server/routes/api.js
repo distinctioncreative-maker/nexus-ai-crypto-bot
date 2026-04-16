@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const userStore = require('../userStore');
 const { authenticate, supabase } = require('../middleware/auth');
-const { getSignals } = require('../services/signalEngine');
+const { getSignals, getNews } = require('../services/signalEngine');
 const { saveUserSettings } = require('../db/persistence');
 
 // Public: health check
@@ -147,6 +147,16 @@ router.get('/signals', authenticate, async (req, res) => {
     try {
         const signals = await getSignals();
         res.json(signals);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Protected: get real crypto news from CryptoPanic
+router.get('/news', authenticate, async (req, res) => {
+    try {
+        const news = await getNews();
+        res.json(news);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

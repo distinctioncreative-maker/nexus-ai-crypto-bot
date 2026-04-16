@@ -54,6 +54,9 @@ async function loadUserState(supabase, userId) {
             console.error('Key decryption failed for user', userId, e.message);
         }
 
+        // Rebuild per-product holdings from trade history
+        const productHoldings = settings.product_holdings || {};
+
         return {
             keys: {
                 coinbaseApiKey: cbKey,
@@ -67,6 +70,7 @@ async function loadUserState(supabase, userId) {
             isLiveMode: settings.is_live_mode || false,
             riskSettings: settings.risk_settings || {},
             circuitBreaker: settings.circuit_breaker || {},
+            productHoldings,
             trades: (trades || []).map(normalizeTradeRow),
             learningHistory: (learning || []).map(r => ({
                 time: r.created_at,
@@ -108,6 +112,7 @@ async function saveUserSettings(supabase, userId, user) {
             is_live_mode: user.isLiveMode || false,
             risk_settings: user.riskSettings || {},
             circuit_breaker: user.circuitBreaker || {},
+            product_holdings: user.productHoldings || {},
             updated_at: new Date().toISOString()
         };
 
