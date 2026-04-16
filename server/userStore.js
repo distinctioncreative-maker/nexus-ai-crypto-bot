@@ -4,7 +4,7 @@
 
 const CryptoJS = require('crypto-js');
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_SECRET || 'kalshi-enterprise-local-dev-key-32c';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_SECRET || 'quant-distinction-creative-local-dev-key';
 
 class UserStore {
     constructor() {
@@ -20,10 +20,11 @@ class UserStore {
                     coinbaseApiSecret: null,
                     geminiApiKey: null
                 },
+                selectedProduct: 'BTC-USD',
                 paperTradingState: {
                     initialBalance: 100000.00,
                     balance: 100000.00,
-                    btcHoldings: 0,
+                    assetHoldings: 0,
                     trades: [],
                     learningHistory: []
                 },
@@ -59,15 +60,31 @@ class UserStore {
         const user = this._ensureUser(userId);
         return {
             ...user.paperTradingState,
+            selectedProduct: user.selectedProduct,
             circuitBreaker: user.circuitBreaker
         };
+    }
+
+    getSelectedProduct(userId) {
+        const user = this._ensureUser(userId);
+        return user.selectedProduct;
+    }
+
+    setSelectedProduct(userId, productId) {
+        const user = this._ensureUser(userId);
+        user.selectedProduct = productId;
+        // Reset holdings when switching instruments (clean paper trading slate)
+        user.paperTradingState.assetHoldings = 0;
+        user.paperTradingState.trades = [];
+        user.circuitBreaker.tripped = false;
+        user.circuitBreaker.reason = '';
     }
 
     checkCircuitBreaker(userId, currentPrice) {
         const user = this._ensureUser(userId);
         if (user.circuitBreaker.tripped) return true;
 
-        const totalValue = user.paperTradingState.balance + (user.paperTradingState.btcHoldings * currentPrice);
+        const totalValue = user.paperTradingState.balance + (user.paperTradingState.assetHoldings * currentPrice);
         const drawdown = ((user.paperTradingState.initialBalance - totalValue) / user.paperTradingState.initialBalance) * 100;
 
         if (drawdown >= user.circuitBreaker.maxDrawdownPercent) {
@@ -87,10 +104,10 @@ class UserStore {
         const cost = amount * price;
         if (type === 'BUY' && user.paperTradingState.balance >= cost) {
             user.paperTradingState.balance -= cost;
-            user.paperTradingState.btcHoldings += amount;
-        } else if (type === 'SELL' && user.paperTradingState.btcHoldings >= amount) {
+            user.paperTradingState.assetHoldings += amount;
+        } else if (type === 'SELL' && user.paperTradingState.assetHoldings >= amount) {
             user.paperTradingState.balance += cost;
-            user.paperTradingState.btcHoldings -= amount;
+            user.paperTradingState.assetHoldings -= amount;
         } else {
             return false;
         }
@@ -101,12 +118,19 @@ class UserStore {
             amount,
             price,
             time: new Date().toISOString(),
-            reason
+            reason,
+            product: user.selectedProduct
         };
 
         user.paperTradingState.trades.unshift(trade);
         if (user.paperTradingState.trades.length > 50) user.paperTradingState.trades.pop();
-        return trade;
+
+        // Return trade with updated portfolio state for frontend sync
+        return {
+            ...trade,
+            newBalance: user.paperTradingState.balance,
+            newAssetHoldings: user.paperTradingState.assetHoldings
+        };
     }
 
     recordLearning(userId, lesson) {

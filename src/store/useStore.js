@@ -8,6 +8,10 @@ export const useStore = create((set) => ({
     isLiveMode: false,
     toggleTradingMode: () => set((state) => ({ isLiveMode: !state.isLiveMode })),
 
+    // Instrument selection
+    selectedProduct: 'BTC-USD',
+    setSelectedProduct: (product) => set({ selectedProduct: product, marketHistory: [], currentPrice: 0 }),
+
     // WebSockets & Market Data
     wsConnected: false,
     setWsConnected: (status) => set({ wsConnected: status }),
@@ -19,10 +23,13 @@ export const useStore = create((set) => ({
         if (newHistory.length > 500) newHistory.shift(); // keep graph performant
         return { marketHistory: newHistory };
     }),
+    clearMarketHistory: () => set({ marketHistory: [], currentPrice: 0 }),
 
     // Portfolio State
     balance: 0,
     setBalance: (balance) => set({ balance }),
+    assetHoldings: 0,
+    setAssetHoldings: (assetHoldings) => set({ assetHoldings }),
     trades: [],
     addTrade: (trade) => set((state) => ({ trades: [trade, ...state.trades] })),
     setTrades: (trades) => set({ trades }),

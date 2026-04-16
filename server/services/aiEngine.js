@@ -1,27 +1,29 @@
 const userStore = require('../userStore');
 const { GoogleGenAI, Type } = require('@google/genai');
 
-async function evaluateMarketSignal(userId, pricePoints) {
+async function evaluateMarketSignal(userId, pricePoints, productId) {
     if (!userStore.hasKeys(userId)) return null;
 
     const keys = userStore.getKeys(userId);
     const ai = new GoogleGenAI({ apiKey: keys.geminiApiKey });
     const state = userStore.getPaperState(userId);
+    const product = productId || state.selectedProduct || 'BTC-USD';
+    const [baseAsset] = product.split('-');
 
     const memoryContext = state.learningHistory.map((h, i) => `Lesson ${i+1}: ${h.knowledge}`).join('\n');
 
     const prompt = `
-You manage a live portfolio.
+You manage a live paper trading portfolio for ${product}.
 Current Balance: $${state.balance.toFixed(2)}
-Current BTC Holdings: ${state.btcHoldings}
+Current ${baseAsset} Holdings: ${state.assetHoldings}
 
-Recent Market Activity (Prices, last = most recent):
+Recent ${product} Price Activity (oldest → newest):
 ${JSON.stringify(pricePoints)}
 
 Your historical algorithmic learnings from past PnL Analysis:
-${memoryContext || "First analysis. Focus on momentum and mean-reversion rules."}
+${memoryContext || `First analysis for ${product}. Focus on momentum and mean-reversion rules.`}
 
-Based strictly on this data, should we BUY, SELL, or HOLD right now?
+Based strictly on this data, should we BUY, SELL, or HOLD ${baseAsset} right now?
 Respond with JSON matching the strict schema. Action must be 'BUY', 'SELL', or 'HOLD'.
 `;
 
@@ -56,9 +58,9 @@ Respond with JSON matching the strict schema. Action must be 'BUY', 'SELL', or '
             if (lastBuyTrade) {
                 const pnl = currentPrice - lastBuyTrade.price;
                 if (pnl < 0) {
-                    userStore.recordLearning(userId, `[CRITICAL MISS] Loss of $${Math.abs(pnl).toFixed(2)}/BTC. Tighten entry criteria.`);
+                    userStore.recordLearning(userId, `[CRITICAL MISS] ${product} loss of $${Math.abs(pnl).toFixed(2)}. Tighten entry criteria.`);
                 } else {
-                    userStore.recordLearning(userId, `[WIN] Profit of $${pnl.toFixed(2)}/BTC. Pattern exploited successfully.`);
+                    userStore.recordLearning(userId, `[WIN] ${product} profit of $${pnl.toFixed(2)}. Pattern exploited successfully.`);
                 }
             }
         } else if (decision.lesson_learned && decision.action !== 'HOLD') {

@@ -16,6 +16,7 @@ import AgentsPage from './components/AgentsPage';
 import DataLabPage from './components/DataLabPage';
 import IntelligencePage from './components/IntelligencePage';
 import PortfolioPage from './components/PortfolioPage';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
   const { isConfigured, setIsConfigured, isLiveMode, toggleTradingMode, tutorialsActive, toggleTutorials } = useStore();
@@ -106,7 +107,7 @@ function App() {
           <div className="brand">
             <Bot className="logo-icon pulse" size={28} />
             <div className="brand-text">
-              <span className="brand-name text-gradient">Kalshi Enterprise</span>
+              <span className="brand-name text-gradient">Quant</span>
               <span className="version-tag">{user.email}</span>
             </div>
           </div>
@@ -160,14 +161,16 @@ function App() {
           </nav>
 
           <main className="main-content-area">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/portfolio" element={<PortfolioPage />} />
-              <Route path="/intelligence" element={<IntelligencePage />} />
-              <Route path="/agents" element={<AgentsPage />} />
-              <Route path="/datalab" element={<DataLabPage />} />
-              <Route path="/backtest" element={<BacktestModule />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/portfolio" element={<PortfolioPage />} />
+                <Route path="/intelligence" element={<IntelligencePage />} />
+                <Route path="/agents" element={<AgentsPage />} />
+                <Route path="/datalab" element={<DataLabPage />} />
+                <Route path="/backtest" element={<BacktestModule />} />
+              </Routes>
+            </ErrorBoundary>
           </main>
         </div>
       </div>

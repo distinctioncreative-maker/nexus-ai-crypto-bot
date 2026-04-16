@@ -55,8 +55,8 @@ export default function AuthPage({ onAuth }) {
             <div className="auth-hero">
                 <div className="hero-glow"></div>
                 <Bot size={48} strokeWidth={1.5} />
-                <h1 className="text-gradient">Kalshi Enterprise</h1>
-                <p className="auth-subtitle">AI-Powered Trading Intelligence</p>
+                <h1 className="text-gradient">Quant</h1>
+                <p className="auth-subtitle">by Distinction Creative</p>
             </div>
 
             <div className="auth-card glass-panel">

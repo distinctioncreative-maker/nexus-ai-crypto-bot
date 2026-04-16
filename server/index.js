@@ -5,13 +5,14 @@ const http = require('http');
 const WebSocket = require('ws');
 const apiRoutes = require('./routes/api');
 const { startUserStream, ensureMarketConnection } = require('./services/marketStream');
+const userStore = require('./userStore');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// CORS: allow Railway frontend domain + localhost
+// CORS: allow Vercel frontend + localhost
 app.use(cors({
     origin(origin, callback) {
         const allowedOrigins = [
@@ -34,7 +35,7 @@ app.use(cors({
 app.use(express.json());
 
 app.get('/', (req, res) => {
-    res.json({ status: 'ok', service: 'crypto-ai-bot-backend' });
+    res.json({ status: 'ok', service: 'quant-by-distinction-creative' });
 });
 
 // Load API Routes
@@ -48,7 +49,7 @@ const supabase = (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_
 // Start shared public market stream immediately
 ensureMarketConnection();
 
-// WebSocket: authenticate user via JWT query param, then start per-user stream
+// WebSocket: authenticate user, send portfolio state, start per-user stream
 wss.on('connection', async (ws, req) => {
     const requestUrl = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
     let userId = 'local-dev-user';
@@ -68,7 +69,11 @@ wss.on('connection', async (ws, req) => {
         }
     }
 
-    console.log(`📊 User ${userId} connected to live stream`);
+    // Read initial product from query param (e.g. ?product=ETH-USD)
+    const initialProduct = requestUrl.searchParams.get('product') || userStore.getSelectedProduct(userId) || 'BTC-USD';
+    userStore.setSelectedProduct(userId, initialProduct);
+
+    console.log(`📊 User ${userId} connected — trading ${initialProduct}`);
 
     const sendData = (type, payload) => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -76,8 +81,40 @@ wss.on('connection', async (ws, req) => {
         }
     };
 
+    // Send current portfolio state immediately on connect so the UI initialises correctly
+    const state = userStore.getPaperState(userId);
+    sendData('PORTFOLIO_STATE', {
+        balance: state.balance,
+        assetHoldings: state.assetHoldings,
+        trades: state.trades,
+        selectedProduct: state.selectedProduct
+    });
+
     // Start per-user market stream + AI
-    const cleanup = startUserStream(userId, sendData);
+    const { cleanup, setProduct } = startUserStream(userId, sendData, initialProduct);
+
+    // Handle messages from the client (e.g. product change)
+    ws.on('message', (raw) => {
+        try {
+            const msg = JSON.parse(raw);
+            if (msg.type === 'CHANGE_PRODUCT' && msg.payload?.productId) {
+                const newProduct = msg.payload.productId;
+                setProduct(newProduct);
+                console.log(`🔀 User ${userId} switched to ${newProduct}`);
+
+                // Send updated portfolio state after product switch
+                const updatedState = userStore.getPaperState(userId);
+                sendData('PORTFOLIO_STATE', {
+                    balance: updatedState.balance,
+                    assetHoldings: updatedState.assetHoldings,
+                    trades: updatedState.trades,
+                    selectedProduct: updatedState.selectedProduct
+                });
+            }
+        } catch (e) {
+            // Ignore malformed messages
+        }
+    });
 
     ws.on('close', () => {
         console.log(`📊 User ${userId} disconnected`);
@@ -88,7 +125,7 @@ wss.on('connection', async (ws, req) => {
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || (process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : '127.0.0.1');
 server.listen(PORT, HOST, () => {
-    console.log(`🚀 Crypto AI Bot Backend running at http://${HOST}:${PORT}`);
+    console.log(`🚀 Quant by Distinction Creative — Backend running at http://${HOST}:${PORT}`);
 });
 
 server.on('error', (error) => {
