@@ -1,9 +1,11 @@
-import React, { useEffect, useRef } from 'react';
-import { Brain, TrendingUp, Zap, ChevronDown } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown } from 'lucide-react';
 import { createChart, ColorType, AreaSeries } from 'lightweight-charts';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { sendProductChange } from '../services/websocket';
+import { authFetch } from '../lib/supabase';
+import { apiUrl } from '../lib/api';
 
 const PRODUCTS = [
     { id: 'BTC-USD',  label: 'Bitcoin',   symbol: 'BTC'  },
@@ -21,8 +23,23 @@ const PRODUCTS = [
 export default function Dashboard() {
     const {
         currentPrice, aiStatus, trades, balance, assetHoldings,
-        isLiveMode, marketHistory, selectedProduct, setSelectedProduct
+        isLiveMode, marketHistory, selectedProduct, setSelectedProduct,
+        strategies
     } = useStore();
+
+    const [signals, setSignals] = useState(null);
+    useEffect(() => {
+        authFetch(apiUrl('/api/signals'))
+            .then(r => r.json())
+            .then(setSignals)
+            .catch(() => {});
+        const t = setInterval(() => {
+            authFetch(apiUrl('/api/signals')).then(r => r.json()).then(setSignals).catch(() => {});
+        }, 5 * 60 * 1000);
+        return () => clearInterval(t);
+    }, []);
+
+    const winningStrategy = strategies?.filter(s => s.status === 'active').sort((a, b) => b.sharpe - a.sharpe)[0];
 
     const chartContainerRef = useRef();
     const lineSeriesRef = useRef(null);
@@ -188,13 +205,95 @@ export default function Dashboard() {
                 </motion.div>
             )}
 
+            {/* Intelligence Strip */}
+            {signals && (
+                <motion.div variants={itemVariants} style={{
+                    display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap'
+                }}>
+                    {signals.fearGreed && (
+                        <div style={{
+                            flex: 1, minWidth: '140px', padding: '0.6rem 0.9rem',
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', fontSize: '0.78rem'
+                        }}>
+                            <div style={{ color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Fear & Greed</div>
+                            <div style={{
+                                color: signals.fearGreed.value < 30 ? 'var(--accent-green)' : signals.fearGreed.value > 70 ? 'var(--accent-red)' : 'var(--accent-blue)',
+                                fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.95rem'
+                            }}>
+                                {signals.fearGreed.value}/100
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginTop: '0.1rem' }}>
+                                {signals.fearGreed.classification}
+                            </div>
+                        </div>
+                    )}
+                    {signals.tvl && (
+                        <div style={{
+                            flex: 1, minWidth: '140px', padding: '0.6rem 0.9rem',
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', fontSize: '0.78rem'
+                        }}>
+                            <div style={{ color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>DeFi TVL 7d</div>
+                            <div style={{
+                                color: signals.tvl.changePct > 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+                                fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.95rem',
+                                display: 'flex', alignItems: 'center', gap: '0.25rem'
+                            }}>
+                                {signals.tvl.changePct > 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                                {signals.tvl.changePct > 0 ? '+' : ''}{signals.tvl.changePct}%
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginTop: '0.1rem' }}>DeFi Health</div>
+                        </div>
+                    )}
+                    {signals.polymarket && (
+                        <div style={{
+                            flex: 1, minWidth: '140px', padding: '0.6rem 0.9rem',
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '10px', fontSize: '0.78rem'
+                        }}>
+                            <div style={{ color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Polymarket BTC</div>
+                            <div style={{
+                                color: signals.polymarket.bullProb > 0.5 ? 'var(--accent-green)' : 'var(--accent-red)',
+                                fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.95rem'
+                            }}>
+                                {(signals.polymarket.bullProb * 100).toFixed(0)}% Bull
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginTop: '0.1rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                Prediction Market
+                            </div>
+                        </div>
+                    )}
+                    <div style={{
+                        flex: 1, minWidth: '140px', padding: '0.6rem 0.9rem',
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '10px', fontSize: '0.78rem'
+                    }}>
+                        <div style={{ color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Composite Signal</div>
+                        <div style={{
+                            color: signals.compositeScore > 0 ? 'var(--accent-green)' : signals.compositeScore < 0 ? 'var(--accent-red)' : 'var(--text-secondary)',
+                            fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.95rem'
+                        }}>
+                            {signals.compositeScore > 0 ? '+' : ''}{signals.compositeScore}
+                        </div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem', marginTop: '0.1rem' }}>
+                            {signals.compositeScore > 20 ? 'Bullish' : signals.compositeScore < -20 ? 'Bearish' : 'Neutral'}
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
             {/* Chart + Trade Feed Grid */}
             <div className="dashboard-grid">
                 <motion.div className="glass-panel widget chart-container" variants={itemVariants}>
                     <div className="widget-header">
                         <h2 className="widget-title">
                             <TrendingUp size={20} />
-                            Quant Core Engine
+                            {winningStrategy ? `${winningStrategy.name}` : 'Quant Core Engine'}
                         </h2>
 
                         {/* Instrument Selector */}

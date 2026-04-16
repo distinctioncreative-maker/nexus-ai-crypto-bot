@@ -1,10 +1,10 @@
 const WebSocket = require('ws');
 const { evaluateMarketSignal } = require('./aiEngine');
 const userStore = require('../userStore');
+const { checkTradeAllowed, getSuggestedTradeSize } = require('./riskEngine');
 
 const MARKET_WS_URL = process.env.MARKET_WS_URL || 'wss://advanced-trade-ws.coinbase.com';
 
-// Supported Coinbase products
 const SUPPORTED_PRODUCTS = [
     'BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD',
     'ADA-USD', 'AVAX-USD', 'MATIC-USD', 'LINK-USD', 'DOT-USD',
@@ -12,10 +12,8 @@ const SUPPORTED_PRODUCTS = [
 ];
 module.exports.SUPPORTED_PRODUCTS = SUPPORTED_PRODUCTS;
 
-// Per-product price data: Map<productId, { price: number, history: number[] }>
 const productData = new Map();
 
-// Shared Coinbase WebSocket — one connection, subscribed to all products
 let marketWs = null;
 let isSubscribed = false;
 
@@ -91,14 +89,71 @@ function ensureMarketConnection() {
     });
 }
 
-// Per-user streaming: ticks + AI evaluation for the user's selected product
+/**
+ * Execute a real Coinbase order and mirror the result into the paper state
+ * so the portfolio page stays in sync.
+ */
+async function executeLiveOrder(userId, action, amount, price, productId, reasoning, broadcastFn) {
+    const keys = userStore.getKeys(userId);
+    if (!keys?.coinbaseApiKey || !keys?.coinbaseApiSecret) {
+        broadcastFn('AI_STATUS', '⚠️ Live mode: Coinbase API keys missing');
+        userStore.addNotification(userId, {
+            type: 'CIRCUIT_BREAKER',
+            title: 'Live Order Blocked',
+            body: 'Coinbase API keys not found. Check Setup.'
+        });
+        broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
+        return;
+    }
+
+    try {
+        const { placeMarketOrder } = require('./liveTrading');
+        broadcastFn('AI_STATUS', `Placing live ${action} order on Coinbase…`);
+        const result = await placeMarketOrder(keys.coinbaseApiKey, keys.coinbaseApiSecret, action, amount, productId);
+
+        if (result.status === 'FILLED') {
+            const fillPrice = result.avgFillPrice || price;
+            const fillSize = result.filledSize || amount;
+            // Mirror into paper state for portfolio tracking
+            userStore.executePaperTrade(userId, action, fillSize, fillPrice, `[LIVE] ${reasoning}`);
+            broadcastFn('TRADE_EXEC', {
+                type: action,
+                amount: fillSize,
+                price: fillPrice,
+                product: productId,
+                orderId: result.orderId,
+                isLive: true,
+                newBalance: userStore.getPaperState(userId).balance,
+                newAssetHoldings: userStore.getPaperState(userId).assetHoldings
+            });
+            userStore.addNotification(userId, {
+                type: 'TRADE_EXECUTED',
+                title: `[LIVE] ${action} Filled`,
+                body: `Order ${result.orderId} — ${fillSize.toFixed(6)} ${productId} @ $${fillPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+            });
+            broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
+        } else {
+            broadcastFn('AI_STATUS', `Live order status: ${result.status}`);
+        }
+    } catch (err) {
+        console.error('Live order error:', err.message);
+        broadcastFn('AI_STATUS', `Live order failed: ${err.message}`);
+        userStore.addNotification(userId, {
+            type: 'CIRCUIT_BREAKER',
+            title: 'Live Order Failed',
+            body: err.message
+        });
+        broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
+    }
+}
+
+module.exports.executeLiveOrder = executeLiveOrder;
+
 function startUserStream(userId, broadcastFn, initialProduct) {
     ensureMarketConnection();
 
-    // Allow dynamic product switching per user
     let activeProduct = initialProduct || userStore.getSelectedProduct(userId) || 'BTC-USD';
 
-    // Expose a way for the server to change the product for this user
     const setProduct = (productId) => {
         if (SUPPORTED_PRODUCTS.includes(productId)) {
             activeProduct = productId;
@@ -112,15 +167,22 @@ function startUserStream(userId, broadcastFn, initialProduct) {
         const data = getProductData(activeProduct);
         if (data.price <= 0) return;
 
-        // Send price tick for the user's active product
         broadcastFn('TICK', {
             price: data.price,
             product: activeProduct,
             time: new Date().toLocaleTimeString()
         });
 
+        const user = userStore._ensureUser(userId);
+
+        if (user.killSwitch || user.circuitBreaker.tripped) {
+            const reason = user.killSwitchReason || user.circuitBreaker.reason;
+            broadcastFn('KILL_SWITCH_ALERT', { reason });
+            broadcastFn('AI_STATUS', `🛑 Halted: ${reason}`);
+            return;
+        }
+
         const now = Date.now();
-        // Run AI every 30s if this user has keys and enough price history
         if (userStore.hasKeys(userId) && data.history.length >= 20 && (now - lastAiEvalTime > 30000)) {
             lastAiEvalTime = now;
             broadcastFn('AI_STATUS', `Analyzing ${activeProduct} market structure…`);
@@ -128,21 +190,62 @@ function startUserStream(userId, broadcastFn, initialProduct) {
             const decision = await evaluateMarketSignal(userId, [...data.history], activeProduct);
 
             if (decision && decision.action !== 'HOLD' && decision.confidence > 70) {
-                const amountToTrade = 0.05;
-                const executed = userStore.executePaperTrade(
-                    userId, decision.action, amountToTrade, data.price, decision.reasoning
-                );
+                const suggestedAmount = getSuggestedTradeSize(userId, data.price);
+                const amountToTrade = decision.position_size_override || suggestedAmount;
 
-                if (executed) {
-                    broadcastFn('TRADE_EXEC', executed);
+                const riskCheck = checkTradeAllowed(userId, decision.action, amountToTrade, data.price, data.history);
+
+                if (!riskCheck.allowed) {
+                    broadcastFn('AI_STATUS', `Risk block: ${riskCheck.reason}`);
+                    userStore.addNotification(userId, {
+                        type: 'AI_SIGNAL',
+                        title: `${decision.action} Blocked`,
+                        body: riskCheck.reason
+                    });
+                    broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
+                } else {
+                    const finalAmount = riskCheck.adjustedAmount || amountToTrade;
+                    const currentUser = userStore._ensureUser(userId);
+
+                    if (currentUser.tradingMode === 'AI_ASSISTED') {
+                        const pendingTrade = {
+                            tradeId: Date.now(),
+                            side: decision.action,
+                            amount: finalAmount,
+                            price: data.price,
+                            product: activeProduct,
+                            reasoning: decision.reasoning,
+                            confidence: decision.confidence,
+                            signals: decision.signals,
+                            isLive: currentUser.isLiveMode,
+                            expiresAt: Date.now() + 60000
+                        };
+                        userStore.setPendingTrade(userId, pendingTrade);
+                        broadcastFn('PENDING_TRADE', pendingTrade);
+                        broadcastFn('AI_STATUS', `Awaiting your confirmation: ${decision.action} ${activeProduct}`);
+                    } else if (currentUser.isLiveMode) {
+                        // Live Full Auto execution
+                        await executeLiveOrder(userId, decision.action, finalAmount, data.price, activeProduct, decision.reasoning, broadcastFn);
+                    } else {
+                        // Paper Full Auto execution
+                        const executed = userStore.executePaperTrade(
+                            userId, decision.action, finalAmount, data.price, decision.reasoning
+                        );
+
+                        if (executed) {
+                            broadcastFn('TRADE_EXEC', executed);
+                            const notif = userStore.getNotifications(userId)[0];
+                            broadcastFn('NOTIFICATION', notif);
+                        }
+                    }
                 }
             }
 
+            broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
             broadcastFn('AI_STATUS', `Monitoring ${activeProduct} positions…`);
         }
     }, 2000);
 
-    // Return cleanup + product setter
     return {
         cleanup: () => clearInterval(interval),
         setProduct

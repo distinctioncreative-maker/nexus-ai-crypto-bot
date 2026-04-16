@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, BarChart3, Binary, Briefcase, LogOut } from 'lucide-react';
+import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Bot as BotAuto, Cpu } from 'lucide-react';
 import { useStore } from './store/useStore';
-import { initWebSocket, closeWebSocket } from './services/websocket';
+import { initWebSocket, closeWebSocket, sendTradingModeChange } from './services/websocket';
 import { supabase, authFetch } from './lib/supabase';
 import { apiUrl, readApiResponse } from './lib/api';
 import './App.css';
@@ -13,15 +13,21 @@ import SetupWizard from './components/SetupWizard';
 import Dashboard from './components/Dashboard';
 import BacktestModule from './components/BacktestModule';
 import AgentsPage from './components/AgentsPage';
-import DataLabPage from './components/DataLabPage';
 import IntelligencePage from './components/IntelligencePage';
 import PortfolioPage from './components/PortfolioPage';
 import ErrorBoundary from './components/ErrorBoundary';
+import NotificationCenter from './components/NotificationCenter';
+import KillSwitch from './components/KillSwitch';
+import RiskSettingsModal from './components/RiskSettingsModal';
+import PendingTradeCard from './components/PendingTradeCard';
+import LiveModeConfirmModal from './components/LiveModeConfirmModal';
+import Tutorial from './components/Tutorial';
 
 function App() {
-  const { isConfigured, setIsConfigured, isLiveMode, toggleTradingMode, tutorialsActive, toggleTutorials } = useStore();
+  const { isConfigured, setIsConfigured, isLiveMode, toggleTradingMode, tutorialsActive, toggleTutorials, tradingMode, setTradingMode } = useStore();
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [showLiveConfirm, setShowLiveConfirm] = useState(false);
 
   // Listen for Supabase auth state changes
   useEffect(() => {
@@ -42,11 +48,16 @@ function App() {
 
     // Subscribe to auth events
     if (supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         setUser(session?.user || null);
         if (!session) {
           setIsConfigured(false);
           closeWebSocket();
+        }
+        // Reconnect WebSocket with fresh token when Supabase silently refreshes the JWT
+        if (event === 'TOKEN_REFRESHED' && session) {
+          closeWebSocket();
+          initWebSocket();
         }
       });
       return () => subscription.unsubscribe();
@@ -113,12 +124,45 @@ function App() {
           </div>
 
           <div className="system-controls">
-            <div className="mode-toggle-container" onClick={toggleTradingMode}>
+            <div
+              className="mode-toggle-container"
+              onClick={() => {
+                if (!isLiveMode) {
+                  // Switching TO live — require confirmation
+                  setShowLiveConfirm(true);
+                } else {
+                  // Switching back to paper — immediate, no confirmation needed
+                  authFetch(apiUrl('/api/live-mode'), { method: 'POST', body: JSON.stringify({ isLive: false }) })
+                    .catch(() => {});
+                  toggleTradingMode();
+                }
+              }}
+              title={isLiveMode ? 'Click to switch back to paper simulation' : 'Click to activate live trading'}
+            >
               <div className={`mode-pill ${isLiveMode ? 'live' : 'paper'}`}>
                 {isLiveMode ? <ShieldAlert size={16}/> : <Binary size={16}/>}
                 {isLiveMode ? 'LIVE EXECUTION' : 'PAPER SIMULATION'}
               </div>
             </div>
+
+            {/* Trading mode toggle: Full Auto / AI Assisted */}
+            <div
+              className="mode-toggle-container"
+              onClick={() => {
+                const next = tradingMode === 'FULL_AUTO' ? 'AI_ASSISTED' : 'FULL_AUTO';
+                sendTradingModeChange(next);
+              }}
+              title={tradingMode === 'FULL_AUTO' ? 'Full Auto: AI executes without confirmation' : 'AI Assisted: You confirm each trade'}
+            >
+              <div className={`mode-pill ${tradingMode === 'AI_ASSISTED' ? 'live' : 'paper'}`} style={{ fontSize: '0.7rem' }}>
+                <Cpu size={14} />
+                {tradingMode === 'AI_ASSISTED' ? 'AI ASSISTED' : 'FULL AUTO'}
+              </div>
+            </div>
+
+            <KillSwitch />
+            <NotificationCenter />
+            <RiskSettingsModal />
 
             <button
               className={`tutorial-btn ${tutorialsActive ? 'active' : ''}`}
@@ -152,28 +196,41 @@ function App() {
             <NavLink to="/agents" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
               <Activity size={22}/> <span className="nav-label">Agents</span>
             </NavLink>
-            <NavLink to="/datalab" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
-              <BarChart3 size={22}/> <span className="nav-label">Data Lab</span>
-            </NavLink>
             <NavLink to="/backtest" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
               <Binary size={22}/> <span className="nav-label">Backtest</span>
             </NavLink>
           </nav>
 
           <main className="main-content-area">
+            <PendingTradeCard />
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/portfolio" element={<PortfolioPage />} />
                 <Route path="/intelligence" element={<IntelligencePage />} />
                 <Route path="/agents" element={<AgentsPage />} />
-                <Route path="/datalab" element={<DataLabPage />} />
                 <Route path="/backtest" element={<BacktestModule />} />
               </Routes>
             </ErrorBoundary>
           </main>
         </div>
       </div>
+
+      {tutorialsActive && (
+        <Tutorial onClose={toggleTutorials} />
+      )}
+
+      {showLiveConfirm && (
+        <LiveModeConfirmModal
+          onConfirm={() => {
+            authFetch(apiUrl('/api/live-mode'), { method: 'POST', body: JSON.stringify({ isLive: true }) })
+              .catch(() => {});
+            toggleTradingMode();
+            setShowLiveConfirm(false);
+          }}
+          onCancel={() => setShowLiveConfirm(false)}
+        />
+      )}
     </BrowserRouter>
   );
 }

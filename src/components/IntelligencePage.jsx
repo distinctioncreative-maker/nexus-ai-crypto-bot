@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Radio, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Radio, TrendingUp, TrendingDown, Minus, Brain, BarChart2, Percent } from 'lucide-react';
+import { authFetch } from '../lib/supabase';
+import { apiUrl } from '../lib/api';
 
 const SOURCE_COLORS = {
   Reuters: '#CC2936',
@@ -200,6 +202,15 @@ export default function IntelligencePage() {
   const [keywords, setKeywords] = useState(KEYWORDS);
   const nextId = useRef(100);
 
+  const [realSignals, setRealSignals] = useState(null);
+  useEffect(() => {
+    authFetch(apiUrl('/api/signals')).then(r => r.json()).then(setRealSignals).catch(() => {});
+    const t = setInterval(() => {
+      authFetch(apiUrl('/api/signals')).then(r => r.json()).then(setRealSignals).catch(() => {});
+    }, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+
   // Add new news items every 10-14 seconds
   useEffect(() => {
     const addItem = () => {
@@ -247,6 +258,61 @@ export default function IntelligencePage() {
           NEXUS monitors 200+ sources around the clock. High-impact events automatically alert your trading agents.
         </p>
       </div>
+
+      {/* Real Market Signals */}
+      {realSignals && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          {realSignals.fearGreed && (
+            <div className="glass-panel" style={{ padding: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem', fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                <Brain size={12} /> Fear & Greed Index
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.6rem', fontWeight: 700, color: realSignals.fearGreed.value < 30 ? 'var(--accent-green)' : realSignals.fearGreed.value > 70 ? 'var(--accent-red)' : 'var(--accent-blue)' }}>
+                {realSignals.fearGreed.value}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                {realSignals.fearGreed.classification}
+              </div>
+            </div>
+          )}
+          {realSignals.tvl && (
+            <div className="glass-panel" style={{ padding: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem', fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                <BarChart2 size={12} /> DeFi TVL 7d Change
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.6rem', fontWeight: 700, color: realSignals.tvl.changePct > 0 ? 'var(--accent-green)' : 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                {realSignals.tvl.changePct > 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                {realSignals.tvl.changePct > 0 ? '+' : ''}{realSignals.tvl.changePct}%
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>DeFi Capital Flow</div>
+            </div>
+          )}
+          {realSignals.polymarket && (
+            <div className="glass-panel" style={{ padding: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem', fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                <Percent size={12} /> Polymarket BTC Bull
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.6rem', fontWeight: 700, color: realSignals.polymarket.bullProb > 0.5 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                {(realSignals.polymarket.bullProb * 100).toFixed(0)}%
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Prediction Market
+              </div>
+            </div>
+          )}
+          <div className="glass-panel" style={{ padding: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem', fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              AI Composite Signal
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.6rem', fontWeight: 700, color: realSignals.compositeScore > 0 ? 'var(--accent-green)' : realSignals.compositeScore < 0 ? 'var(--accent-red)' : 'var(--text-secondary)' }}>
+              {realSignals.compositeScore > 0 ? '+' : ''}{realSignals.compositeScore}
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+              {realSignals.compositeScore > 20 ? 'Bullish' : realSignals.compositeScore < -20 ? 'Bearish' : 'Neutral'} bias
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sentiment gauges */}
       <div style={{ display: 'flex', gap: '0.65rem', marginBottom: '1.25rem' }}>

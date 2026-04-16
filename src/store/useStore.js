@@ -8,6 +8,10 @@ export const useStore = create((set) => ({
     isLiveMode: false,
     toggleTradingMode: () => set((state) => ({ isLiveMode: !state.isLiveMode })),
 
+    // Trading mode: FULL_AUTO | AI_ASSISTED
+    tradingMode: 'FULL_AUTO',
+    setTradingMode: (mode) => set({ tradingMode: mode }),
+
     // Instrument selection
     selectedProduct: 'BTC-USD',
     setSelectedProduct: (product) => set({ selectedProduct: product, marketHistory: [], currentPrice: 0 }),
@@ -20,7 +24,7 @@ export const useStore = create((set) => ({
     marketHistory: [],
     addMarketPoint: (point) => set((state) => {
         const newHistory = [...state.marketHistory, point];
-        if (newHistory.length > 500) newHistory.shift(); // keep graph performant
+        if (newHistory.length > 500) newHistory.shift();
         return { marketHistory: newHistory };
     }),
     clearMarketHistory: () => set({ marketHistory: [], currentPrice: 0 }),
@@ -39,6 +43,46 @@ export const useStore = create((set) => ({
     setAiStatus: (status) => set({ aiStatus: status }),
     auditLogs: [],
     addAuditLog: (log) => set((state) => ({ auditLogs: [log, ...state.auditLogs] })),
+
+    // Notifications
+    notifications: [],
+    unreadCount: 0,
+    addNotification: (notif) => set((state) => ({
+        notifications: [notif, ...state.notifications].slice(0, 50),
+        unreadCount: state.unreadCount + 1
+    })),
+    markAllRead: () => set((state) => ({
+        notifications: state.notifications.map(n => ({ ...n, read: true })),
+        unreadCount: 0
+    })),
+    clearNotifications: () => set({ notifications: [], unreadCount: 0 }),
+
+    // Pending trade (AI Assisted mode)
+    pendingTrade: null,
+    setPendingTrade: (trade) => set({ pendingTrade: trade }),
+    clearPendingTrade: () => set({ pendingTrade: null }),
+
+    // Risk settings (synced from backend on connect)
+    riskSettings: {
+        maxTradePercent: 2,
+        dailyLossLimitPercent: 5,
+        maxSingleOrderUSD: 1000,
+        maxPositionPercent: 40,
+        volatilityReduceThreshold: 8,
+        stopLossPercent: 3,
+        takeProfitPercent: 6,
+        enableKellySize: false
+    },
+    setRiskSettings: (settings) => set({ riskSettings: settings }),
+
+    // Strategy tournament data
+    strategies: [],
+    setStrategies: (strategies) => set({ strategies }),
+
+    // Kill switch
+    killSwitchActive: false,
+    killSwitchReason: '',
+    setKillSwitchActive: (active, reason = '') => set({ killSwitchActive: active, killSwitchReason: reason }),
 
     // UI Features
     tutorialsActive: false,

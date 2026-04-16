@@ -33,11 +33,16 @@ export const initWebSocket = async () => {
                 break;
 
             case 'PORTFOLIO_STATE':
-                // Initialize portfolio from backend on connect
                 store.setBalance(message.payload.balance ?? 0);
                 store.setAssetHoldings(message.payload.assetHoldings ?? 0);
                 if (Array.isArray(message.payload.trades)) {
                     store.setTrades(message.payload.trades);
+                }
+                if (message.payload.riskSettings) {
+                    store.setRiskSettings(message.payload.riskSettings);
+                }
+                if (message.payload.tradingMode) {
+                    store.setTradingMode(message.payload.tradingMode);
                 }
                 break;
 
@@ -57,6 +62,22 @@ export const initWebSocket = async () => {
                     reason: message.payload.reason,
                     timestamp: new Date().toISOString()
                 });
+                break;
+
+            case 'PENDING_TRADE':
+                store.setPendingTrade(message.payload);
+                break;
+
+            case 'NOTIFICATION':
+                if (message.payload) store.addNotification(message.payload);
+                break;
+
+            case 'STRATEGY_UPDATE':
+                if (Array.isArray(message.payload)) store.setStrategies(message.payload);
+                break;
+
+            case 'KILL_SWITCH_ALERT':
+                store.setKillSwitchActive(!!message.payload?.reason, message.payload?.reason || '');
                 break;
 
             default:
@@ -89,5 +110,25 @@ export const sendProductChange = (productId) => {
         ws.send(JSON.stringify({ type: 'CHANGE_PRODUCT', payload: { productId } }));
         useStore.getState().clearMarketHistory();
         useStore.getState().setSelectedProduct(productId);
+    }
+};
+
+export const sendConfirmTrade = (tradeId, accepted, amount) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'CONFIRM_TRADE', payload: { tradeId, accepted, amount } }));
+        useStore.getState().clearPendingTrade();
+    }
+};
+
+export const sendKillSwitch = (activate, reason = '') => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'KILL_SWITCH', payload: { activate, reason } }));
+    }
+};
+
+export const sendTradingModeChange = (mode) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'SET_TRADING_MODE', payload: { mode } }));
+        useStore.getState().setTradingMode(mode);
     }
 };

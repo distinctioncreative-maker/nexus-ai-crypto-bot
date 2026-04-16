@@ -7,6 +7,7 @@ const apiRoutes = require('./routes/api');
 const { startUserStream, ensureMarketConnection } = require('./services/marketStream');
 const userStore = require('./userStore');
 const { createClient } = require('@supabase/supabase-js');
+const { loadUserState, saveUserSettings } = require('./db/persistence');
 
 const app = express();
 const server = http.createServer(app);
@@ -81,6 +82,16 @@ wss.on('connection', async (ws, req) => {
         }
     };
 
+    // Load persisted state from DB before sending initial portfolio snapshot
+    const loaded = await loadUserState(supabase, userId);
+    if (loaded) {
+        userStore.restoreState(userId, loaded);
+        // Re-apply the product from query param if explicitly set (overrides persisted product)
+        if (requestUrl.searchParams.get('product')) {
+            userStore.setSelectedProduct(userId, initialProduct);
+        }
+    }
+
     // Send current portfolio state immediately on connect so the UI initialises correctly
     const state = userStore.getPaperState(userId);
     sendData('PORTFOLIO_STATE', {
@@ -91,18 +102,17 @@ wss.on('connection', async (ws, req) => {
     });
 
     // Start per-user market stream + AI
-    const { cleanup, setProduct } = startUserStream(userId, sendData, initialProduct);
+    const { cleanup, setProduct } = startUserStream(userId, sendData, state.selectedProduct);
 
-    // Handle messages from the client (e.g. product change)
+    // Handle messages from the client
     ws.on('message', (raw) => {
         try {
             const msg = JSON.parse(raw);
+
             if (msg.type === 'CHANGE_PRODUCT' && msg.payload?.productId) {
                 const newProduct = msg.payload.productId;
                 setProduct(newProduct);
                 console.log(`🔀 User ${userId} switched to ${newProduct}`);
-
-                // Send updated portfolio state after product switch
                 const updatedState = userStore.getPaperState(userId);
                 sendData('PORTFOLIO_STATE', {
                     balance: updatedState.balance,
@@ -110,6 +120,61 @@ wss.on('connection', async (ws, req) => {
                     trades: updatedState.trades,
                     selectedProduct: updatedState.selectedProduct
                 });
+            }
+
+            if (msg.type === 'KILL_SWITCH') {
+                if (msg.payload?.activate) {
+                    userStore.tripKillSwitch(userId, msg.payload.reason || 'Manual kill switch');
+                    const u = userStore._ensureUser(userId);
+                    sendData('KILL_SWITCH_ALERT', { reason: u.killSwitchReason });
+                    // Cancel open Coinbase orders if user is in live mode
+                    if (u.isLiveMode) {
+                        const keys = userStore.getKeys(userId);
+                        if (keys?.coinbaseApiKey) {
+                            const { cancelAllOrders } = require('./services/liveTrading');
+                            cancelAllOrders(keys.coinbaseApiKey, keys.coinbaseApiSecret, u.selectedProduct)
+                                .then(r => console.log(`Kill switch: cancelled ${r.cancelled} live orders for user ${userId}`))
+                                .catch(err => console.error('cancelAllOrders error:', err.message));
+                        }
+                    }
+                } else {
+                    userStore.resetKillSwitch(userId);
+                    sendData('KILL_SWITCH_ALERT', { reason: null });
+                }
+            }
+
+            if (msg.type === 'SET_TRADING_MODE' && msg.payload?.mode) {
+                userStore.setTradingMode(userId, msg.payload.mode);
+            }
+
+            if (msg.type === 'CONFIRM_TRADE') {
+                const { tradeId, accepted, amount } = msg.payload || {};
+                const pending = userStore.getPendingTrade(userId);
+
+                if (pending && pending.tradeId === tradeId) {
+                    userStore.clearPendingTrade(userId);
+
+                    if (accepted && Date.now() <= pending.expiresAt) {
+                        const finalAmount = amount || pending.amount;
+                        const u = userStore._ensureUser(userId);
+
+                        if (u.isLiveMode) {
+                            // AI Assisted + Live: place real Coinbase order
+                            const { executeLiveOrder } = require('./services/marketStream');
+                            executeLiveOrder(userId, pending.side, finalAmount, pending.price, pending.product, pending.reasoning, sendData);
+                        } else {
+                            // AI Assisted + Paper
+                            const executed = userStore.executePaperTrade(
+                                userId, pending.side, finalAmount, pending.price, pending.reasoning
+                            );
+                            if (executed) {
+                                sendData('TRADE_EXEC', executed);
+                                const notif = userStore.getNotifications(userId)[0];
+                                sendData('NOTIFICATION', notif);
+                            }
+                        }
+                    }
+                }
             }
         } catch (e) {
             // Ignore malformed messages
@@ -119,6 +184,9 @@ wss.on('connection', async (ws, req) => {
     ws.on('close', () => {
         console.log(`📊 User ${userId} disconnected`);
         cleanup();
+        // Persist settings snapshot on disconnect (fire-and-forget)
+        const userSnapshot = userStore._ensureUser(userId);
+        saveUserSettings(supabase, userId, userSnapshot).catch(() => {});
     });
 });
 

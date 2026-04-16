@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
-import { Bot, Pause, Play, Settings, Plus } from 'lucide-react';
+import { Bot, Pause, Play, Settings, Plus, Trophy, TrendingUp } from 'lucide-react';
+import { useStore } from '../store/useStore';
 
 const MOCK_AGENTS = [
   {
@@ -255,95 +256,147 @@ function AgentCard({ agent, onTogglePause }) {
   );
 }
 
+const STRATEGY_COLORS = {
+  MOMENTUM: '#F7931A',
+  MEAN_REVERSION: '#627EEA',
+  TREND_FOLLOWING: '#9945FF',
+  SENTIMENT_DRIVEN: '#34C759',
+  COMBINED: '#0A84FF',
+};
+
+function StrategyCard({ strategy }) {
+    const totalTrades = strategy.wins + strategy.losses;
+    const winRate = totalTrades > 0 ? Math.round((strategy.wins / totalTrades) * 100) : 0;
+    const color = STRATEGY_COLORS[strategy.id?.split('_')[0]] || '#0A84FF';
+    const statusMap = {
+        active:   { color: 'var(--accent-green)',   bg: 'rgba(48,209,88,0.1)',   label: 'ACTIVE' },
+        learning: { color: 'rgba(255,159,10,0.9)',  bg: 'rgba(255,159,10,0.1)',  label: 'LEARNING' },
+        retired:  { color: 'var(--text-secondary)', bg: 'rgba(255,255,255,0.06)', label: 'RETIRED' },
+    };
+    const s = statusMap[strategy.status] || statusMap.learning;
+
+    return (
+        <div className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.9rem', opacity: strategy.status === 'retired' ? 0.5 : 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: `${color}18`, border: `1px solid ${color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Bot size={16} color={color} />
+                    </div>
+                    <div>
+                        <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {strategy.name}
+                            {strategy.generation > 1 && (
+                                <span style={{ marginLeft: '0.4rem', fontSize: '0.65rem', color: color, background: `${color}18`, padding: '0.1rem 0.3rem', borderRadius: '4px' }}>
+                                    Gen {strategy.generation}
+                                </span>
+                            )}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                            {Object.entries(strategy.parameters || {}).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                        </div>
+                    </div>
+                </div>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.18rem 0.55rem', borderRadius: '20px', background: s.bg, color: s.color, fontSize: '0.62rem', fontWeight: 700 }}>
+                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: s.color }} />
+                    {s.label}
+                </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', padding: '0.75rem', background: 'rgba(255,255,255,0.025)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                {[
+                    { label: 'Win Rate',    value: `${winRate}%`,                    color: winRate >= 55 ? 'var(--accent-green)' : 'var(--text-secondary)' },
+                    { label: 'Sharpe',      value: strategy.sharpe?.toFixed(2) ?? '0.00', color: strategy.sharpe > 0.5 ? 'var(--accent-green)' : 'var(--text-secondary)' },
+                    { label: 'Total P&L',   value: `${strategy.totalPnlPct >= 0 ? '+' : ''}${strategy.totalPnlPct?.toFixed(1) ?? '0.0'}%`, color: strategy.totalPnlPct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' },
+                    { label: 'Trades',      value: totalTrades,                       color: 'var(--text-primary)' },
+                ].map(stat => (
+                    <div key={stat.label} style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.58rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '0.2rem' }}>
+                            {stat.label}
+                        </div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', fontWeight: 600, color: stat.color }}>
+                            {stat.value}
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {strategy.maxDrawdown > 0 && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                    Max drawdown: <span style={{ color: 'var(--accent-red)', fontFamily: 'var(--font-mono)' }}>{strategy.maxDrawdown?.toFixed(1)}%</span>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function AgentsPage() {
-  const [agents, setAgents] = useState(MOCK_AGENTS);
-  const [addHovered, setAddHovered] = useState(false);
+  const { strategies } = useStore();
 
-  const handleTogglePause = (id) => {
-    setAgents(prev => prev.map(a => {
-      if (a.id !== id) return a;
-      return { ...a, status: a.status === 'paused' ? 'active' : 'paused' };
-    }));
-  };
+  const activeStrategies = strategies.filter(s => s.status !== 'retired');
+  const winner = strategies.filter(s => s.status === 'active').sort((a, b) => b.sharpe - a.sharpe)[0];
 
-  const active = agents.filter(a => a.status === 'active').length;
-  const combinedPnl = agents.reduce((s, a) => s + a.dailyPnl, 0);
-  const totalTrades = agents.reduce((s, a) => s + a.tradesToday, 0);
-  const avgWinRate = Math.round(agents.reduce((s, a) => s + a.winRate, 0) / agents.length);
+  const active = strategies.filter(s => s.status === 'active').length;
+  const totalTrades = strategies.reduce((s, a) => s + a.wins + a.losses, 0);
+  const avgWinRate = strategies.length
+    ? Math.round(strategies.reduce((sum, s) => {
+        const t = s.wins + s.losses;
+        return sum + (t > 0 ? (s.wins / t) * 100 : 0);
+      }, 0) / strategies.length)
+    : 0;
+  const bestSharpe = strategies.reduce((best, s) => Math.max(best, s.sharpe || 0), 0);
 
   return (
     <div>
-      {/* Page header */}
       <div className="page-header">
-        <h1 className="page-title">AI Agents</h1>
+        <h1 className="page-title">Strategy Tournament</h1>
         <p className="page-subtitle">
-          Each agent is an independent AI that trades one cryptocurrency. They run simultaneously and don't interfere with each other.
+          {strategies.length > 0
+            ? `${strategies.length} strategies running in parallel. The top performers get promoted. Losers get retired and replaced by evolved variants.`
+            : 'Strategies initialize after first AI evaluation. Configure your API keys and start the engine.'}
         </p>
       </div>
 
-      {/* Global stats bar */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '0.65rem', marginBottom: '1.25rem',
-      }}>
-        {[
-          { label: 'Active Agents', value: `${active} / ${agents.length}`, color: 'var(--accent-green)' },
-          { label: 'Combined Daily Profit/Loss', value: `${combinedPnl >= 0 ? '+' : '-'}$${Math.abs(combinedPnl).toFixed(2)}`, color: combinedPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' },
-          { label: 'Total Trades Today', value: totalTrades, color: 'var(--text-primary)' },
-          { label: 'Overall Win Rate', value: `${avgWinRate}%`, color: avgWinRate >= 60 ? 'var(--accent-green)' : 'var(--accent-orange)' },
-        ].map(s => (
-          <div key={s.label} className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
-            <div style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>
-              {s.label}
-            </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.2rem', fontWeight: 600, color: s.color }}>
-              {s.value}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Agent cards grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.85rem' }}>
-        {agents.map(agent => (
-          <AgentCard key={agent.id} agent={agent} onTogglePause={handleTogglePause} />
-        ))}
-
-        {/* Add Agent placeholder */}
-        <button
-          onMouseEnter={() => setAddHovered(true)}
-          onMouseLeave={() => setAddHovered(false)}
-          style={{
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
-            padding: '2rem',
-            border: `2px dashed ${addHovered ? 'rgba(212,175,55,0.3)' : 'rgba(255,255,255,0.08)'}`,
-            borderRadius: '16px',
-            background: addHovered ? 'rgba(212,175,55,0.03)' : 'transparent',
-            cursor: 'not-allowed',
-            transition: 'all 0.2s ease',
-            minHeight: '200px',
-          }}
-        >
-          <div style={{
-            width: '40px', height: '40px', borderRadius: '50%',
-            border: `1px dashed ${addHovered ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.15)'}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Plus size={18} color={addHovered ? 'var(--accent-gold)' : 'var(--text-secondary)'} />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: addHovered ? 'var(--accent-gold)' : 'var(--text-secondary)' }}>
-              Add Agent
-            </div>
-            {addHovered && (
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.25rem', textAlign: 'center' }}>
-                Coming Soon
+      {strategies.length > 0 && (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.65rem', marginBottom: '1.25rem' }}>
+            {[
+              { label: 'Active Strategies', value: `${active} / ${strategies.length}`, color: 'var(--accent-green)' },
+              { label: 'Total Trades', value: totalTrades, color: 'var(--text-primary)' },
+              { label: 'Avg Win Rate', value: `${avgWinRate}%`, color: avgWinRate >= 55 ? 'var(--accent-green)' : 'var(--accent-orange)' },
+              { label: 'Best Sharpe', value: bestSharpe.toFixed(2), color: bestSharpe > 0.5 ? 'var(--accent-green)' : 'var(--text-secondary)' },
+            ].map(s => (
+              <div key={s.label} className="glass-panel" style={{ padding: '0.85rem 1rem' }}>
+                <div style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{s.label}</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.2rem', fontWeight: 600, color: s.color }}>{s.value}</div>
               </div>
-            )}
+            ))}
           </div>
-        </button>
-      </div>
+
+          {winner && (
+            <div style={{ marginBottom: '1rem', padding: '0.6rem 1rem', background: 'rgba(48, 209, 88, 0.06)', border: '1px solid rgba(48, 209, 88, 0.2)', borderRadius: '10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)' }}>
+              <Trophy size={14} color="var(--accent-green)" />
+              <span>Leading Strategy:</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{winner.name}</strong>
+              <span>— Sharpe {winner.sharpe?.toFixed(2)}</span>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.85rem' }}>
+            {strategies.map(strategy => (
+              <StrategyCard key={strategy.id} strategy={strategy} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {strategies.length === 0 && (
+        <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>
+          <TrendingUp size={40} color="var(--text-secondary)" style={{ marginBottom: '1rem', opacity: 0.4 }} />
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+            Strategy tournament initializes after the AI engine runs its first analysis.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
