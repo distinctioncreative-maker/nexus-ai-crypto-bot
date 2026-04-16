@@ -35,7 +35,7 @@ const MOCK_AGENTS = [
 
 function generateSparkline(points = 30) {
   let val = 100;
-  return Array.from({ length: points }, (_, i) => {
+  return Array.from({ length: points }, () => {
     val = val + (Math.random() - 0.48) * 4;
     return { v: Math.max(val, 80) };
   });

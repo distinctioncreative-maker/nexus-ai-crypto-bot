@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Shield, Key, CheckCircle } from 'lucide-react';
 import { authFetch } from '../lib/supabase';
+import { apiUrl, readApiResponse } from '../lib/api';
 import './SetupWizard.css';
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 export default function SetupWizard({ onComplete }) {
     const [coinbaseKey, setCoinbaseKey] = useState('');
@@ -18,11 +17,11 @@ export default function SetupWizard({ onComplete }) {
         setError('');
 
         try {
-            const response = await authFetch(`${API_URL}/api/setup`, {
+            const response = await authFetch(apiUrl('/api/setup'), {
                 method: 'POST',
                 body: JSON.stringify({ coinbaseKey, coinbaseSecret, geminiKey })
             });
-            const data = await response.json();
+            const data = await readApiResponse(response);
 
             if (data.success) {
                 onComplete();
@@ -30,7 +29,10 @@ export default function SetupWizard({ onComplete }) {
                 setError(data.error || 'Failed to authenticate');
             }
         } catch (err) {
-            setError('Cannot reach backend. Is the server running?');
+            setError(err.message === 'Failed to fetch'
+                ? 'Cannot reach backend. Start the server on port 3001 and try again.'
+                : err.message
+            );
         } finally {
             setLoading(false);
         }

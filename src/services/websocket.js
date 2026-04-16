@@ -1,12 +1,8 @@
 import { useStore } from '../store/useStore';
 import { getAccessToken } from '../lib/supabase';
+import { wsUrl as getBackendWsUrl } from '../lib/api';
 
 let ws = null;
-
-const getBackendWsUrl = () => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-    return backendUrl.replace('http://', 'ws://').replace('https://', 'wss://');
-};
 
 export const initWebSocket = async () => {
     if (ws && ws.readyState === WebSocket.OPEN) return;

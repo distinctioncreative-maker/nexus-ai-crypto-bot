@@ -1,16 +1,38 @@
-# React + Vite
+# Crypto AI Bot
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/Vite trading terminal with a Node/Express backend, Coinbase Advanced Trade public WebSocket market stream, Supabase auth support, and per-user in-memory API key storage for Coinbase Advanced Trade and Gemini.
 
-Currently, two official plugins are available:
+## Local Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Run the backend and frontend in two terminals:
 
-## React Compiler
+```bash
+npm run dev:server
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Open the app at `http://localhost:5173`. The frontend expects the backend at `http://127.0.0.1:3001` unless `VITE_BACKEND_URL` is set.
 
-## Expanding the ESLint configuration
+## Environment
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Copy `.env.example` to `.env` for the frontend and `server/.env.example` to `server/.env` for the backend.
+
+Supabase is optional for local development. If the frontend has no Supabase variables, it auto-signs in as `dev@local`. If the backend has no Supabase service credentials, it accepts local dev requests as `local-dev-user`.
+
+## Health Checks
+
+Backend:
+
+```bash
+curl http://127.0.0.1:3001/api/health
+```
+
+Frontend:
+
+```bash
+curl http://127.0.0.1:5173
+```
+
+## Notes
+
+API keys entered in the setup screen are stored only in the running Node process memory. Restarting the backend clears them.

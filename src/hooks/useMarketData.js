@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiUrl, readApiResponse, wsUrl } from '../lib/api';
 
 export function useMarketData(isConfigured) {
   const [data, setData] = useState([]);
@@ -11,8 +12,8 @@ export function useMarketData(isConfigured) {
   useEffect(() => {
     if (!isConfigured) return;
 
-    fetch('http://localhost:3001/api/portfolio')
-        .then(res => res.json())
+    fetch(apiUrl('/api/portfolio'))
+        .then(readApiResponse)
         .then(state => {
             setBalance(Math.max(0, state.balance));
             setTrades(state.trades);
@@ -27,7 +28,7 @@ export function useMarketData(isConfigured) {
     }
 
     setAiStatus('Connecting to Live Data Stream...');
-    const ws = new WebSocket('ws://localhost:3001');
+    const ws = new WebSocket(wsUrl());
 
     ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
@@ -51,8 +52,8 @@ export function useMarketData(isConfigured) {
             case 'TRADE_EXEC':
                 setTrades(prev => [message.payload, ...prev]);
                 // Re-fetch balance
-                fetch('http://localhost:3001/api/portfolio')
-                    .then(res => res.json())
+                fetch(apiUrl('/api/portfolio'))
+                    .then(readApiResponse)
                     .then(state => setBalance(state.balance));
                 break;
             default:

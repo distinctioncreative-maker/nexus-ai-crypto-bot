@@ -4,6 +4,7 @@ import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, Ba
 import { useStore } from './store/useStore';
 import { initWebSocket, closeWebSocket } from './services/websocket';
 import { supabase, authFetch } from './lib/supabase';
+import { apiUrl, readApiResponse } from './lib/api';
 import './App.css';
 
 // Components
@@ -15,8 +16,6 @@ import AgentsPage from './components/AgentsPage';
 import DataLabPage from './components/DataLabPage';
 import IntelligencePage from './components/IntelligencePage';
 import PortfolioPage from './components/PortfolioPage';
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 function App() {
   const { isConfigured, setIsConfigured, isLiveMode, toggleTradingMode, tutorialsActive, toggleTutorials } = useStore();
@@ -57,15 +56,18 @@ function App() {
   useEffect(() => {
     if (!user) return;
 
-    authFetch(`${API_URL}/api/status`)
-      .then(res => res.json())
+    authFetch(apiUrl('/api/status'))
+      .then(readApiResponse)
       .then(data => {
         setIsConfigured(data.isConfigured);
         if (data.isConfigured) {
           initWebSocket();
         }
       })
-      .catch(err => console.error("Backend check failed:", err));
+      .catch(err => {
+        console.error("Backend check failed:", err);
+        setIsConfigured(false);
+      });
   }, [user, setIsConfigured]);
 
   const handleSignOut = async () => {

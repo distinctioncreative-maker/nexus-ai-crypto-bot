@@ -242,7 +242,7 @@ export default function PortfolioPage() {
 }
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
-function PerformerCard({ title, asset, icon: Icon, positive }) {
+function PerformerCard({ title, asset, icon: Icon }) {
   const pct = ((asset.currentPrice - asset.avgBuy) / asset.avgBuy * 100);
   const pos = pct >= 0;
   const col = pos ? 'var(--accent-green)' : 'var(--accent-red)';

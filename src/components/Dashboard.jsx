@@ -57,7 +57,9 @@ export default function Dashboard() {
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [isLiveMode]); // Recreate chart if color changes due to mode switch
+  // Recreate the chart only when mode changes; live data is streamed into the existing series below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode]);
 
   // Update chart when realtime data comes in
   useEffect(() => {

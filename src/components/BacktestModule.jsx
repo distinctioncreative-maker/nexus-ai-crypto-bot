@@ -51,8 +51,8 @@ function AnimStat({ label, value, color, delay = 0 }) {
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
-    const num  = parseFloat(value.replace(/[^0-9.\-]/g, ''));
-    const pre  = value.match(/^[^\d\-]*/)[0];
+    const num  = parseFloat(value.replace(/[^0-9.-]/g, ''));
+    const pre  = value.match(/^[^\d-]*/)[0];
     const suf  = value.match(/[^\d.]*$/)[0];
     if (isNaN(num)) { setDisp(value); return; }
 

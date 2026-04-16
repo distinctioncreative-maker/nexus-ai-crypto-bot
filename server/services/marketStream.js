@@ -2,35 +2,73 @@ const WebSocket = require('ws');
 const { evaluateMarketSignal } = require('./aiEngine');
 const userStore = require('../userStore');
 
-// Shared Binance WebSocket — one connection for all users
-let binanceWs = null;
+const MARKET_WS_URL = process.env.MARKET_WS_URL || 'wss://advanced-trade-ws.coinbase.com';
+const MARKET_PRODUCT_ID = process.env.MARKET_PRODUCT_ID || 'BTC-USD';
+
+// Shared public market WebSocket — one connection for all users.
+let marketWs = null;
 let priceHistory = [];
 let currentPrice = 0;
 
-function ensureBinanceConnection() {
-    if (binanceWs && binanceWs.readyState === WebSocket.OPEN) return;
+function handleTickerMessage(message) {
+    const events = Array.isArray(message.events) ? message.events : [];
+    for (const event of events) {
+        const tickers = Array.isArray(event.tickers) ? event.tickers : [];
+        const ticker = tickers.find((item) => item.product_id === MARKET_PRODUCT_ID) || tickers[0];
+        const price = Number.parseFloat(ticker?.price);
 
-    console.log("📡 Connecting to Binance BTC/USDT stream...");
-    binanceWs = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@aggTrade');
+        if (Number.isFinite(price) && price > 0) {
+            currentPrice = price;
+            priceHistory.push(currentPrice);
+            if (priceHistory.length > 50) priceHistory.shift();
+        }
+    }
+}
 
-    binanceWs.on('message', (data) => {
-        const trade = JSON.parse(data);
-        currentPrice = parseFloat(trade.p);
+function subscribeToMarketData() {
+    marketWs.send(JSON.stringify({
+        type: 'subscribe',
+        product_ids: [MARKET_PRODUCT_ID],
+        channel: 'ticker'
+    }));
 
-        priceHistory.push(currentPrice);
-        if (priceHistory.length > 50) priceHistory.shift();
+    marketWs.send(JSON.stringify({
+        type: 'subscribe',
+        product_ids: [MARKET_PRODUCT_ID],
+        channel: 'heartbeats'
+    }));
+}
+
+function ensureMarketConnection() {
+    if (marketWs && marketWs.readyState === WebSocket.OPEN) return;
+
+    console.log(`📡 Connecting to Coinbase ${MARKET_PRODUCT_ID} stream...`);
+    marketWs = new WebSocket(MARKET_WS_URL);
+
+    marketWs.on('open', subscribeToMarketData);
+
+    marketWs.on('message', (data) => {
+        try {
+            const message = JSON.parse(data);
+            if (message.channel === 'ticker') {
+                handleTickerMessage(message);
+            }
+        } catch (error) {
+            console.error("Market WS parse error:", error.message);
+        }
     });
 
-    binanceWs.on('error', (err) => console.error("Binance WS Error:", err.message));
-    binanceWs.on('close', () => {
-        console.log("Binance WS closed. Reconnecting in 5s...");
-        setTimeout(ensureBinanceConnection, 5000);
+    marketWs.on('error', (err) => console.error("Market WS Error:", err.message));
+    marketWs.on('close', () => {
+        marketWs = null;
+        console.log("Market WS closed. Reconnecting in 5s...");
+        setTimeout(ensureMarketConnection, 5000);
     });
 }
 
 // Per-user streaming: ticks + AI evaluation
 function startUserStream(userId, broadcastFn) {
-    ensureBinanceConnection();
+    ensureMarketConnection();
 
     let lastAiEvalTime = 0;
 
@@ -68,4 +106,4 @@ function startUserStream(userId, broadcastFn) {
     return () => clearInterval(interval);
 }
 
-module.exports = { startUserStream, ensureBinanceConnection };
+module.exports = { startUserStream, ensureMarketConnection };
