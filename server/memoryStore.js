@@ -6,7 +6,7 @@ class MemoryStore {
         this.keys = {
             coinbaseApiKey: null,
             coinbaseApiSecret: null,
-            openAiApiKey: null
+            geminiApiKey: null
         };
         this.paperTradingState = {
             initalBalance: 100000.00,
@@ -22,14 +22,14 @@ class MemoryStore {
         };
     }
 
-    setKeys(coinbaseKey, coinbaseSecret, openAiKey) {
+    setKeys(coinbaseKey, coinbaseSecret, geminiKey) {
         this.keys.coinbaseApiKey = coinbaseKey;
         this.keys.coinbaseApiSecret = coinbaseSecret;
-        this.keys.openAiApiKey = openAiKey;
+        this.keys.geminiApiKey = geminiKey;
     }
 
     hasKeys() {
-        return !!(this.keys.coinbaseApiKey && this.keys.coinbaseApiSecret && this.keys.openAiApiKey);
+        return !!(this.keys.coinbaseApiKey && this.keys.coinbaseApiSecret && this.keys.geminiApiKey);
     }
 
     getKeys() {

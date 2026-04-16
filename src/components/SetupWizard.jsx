@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { Shield, Key, CheckCircle } from 'lucide-react';
+import { authFetch } from '../lib/supabase';
 import './SetupWizard.css';
+
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 export default function SetupWizard({ onComplete }) {
     const [coinbaseKey, setCoinbaseKey] = useState('');
     const [coinbaseSecret, setCoinbaseSecret] = useState('');
-    const [openAiKey, setOpenAiKey] = useState('');
+    const [geminiKey, setGeminiKey] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -15,20 +18,19 @@ export default function SetupWizard({ onComplete }) {
         setError('');
 
         try {
-            const response = await fetch('http://localhost:3001/api/setup', {
+            const response = await authFetch(`${API_URL}/api/setup`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ coinbaseKey, coinbaseSecret, openAiKey })
+                body: JSON.stringify({ coinbaseKey, coinbaseSecret, geminiKey })
             });
             const data = await response.json();
-            
+
             if (data.success) {
                 onComplete();
             } else {
                 setError(data.error || 'Failed to authenticate');
             }
         } catch (err) {
-            setError('Is the backend server running on port 3001?');
+            setError('Cannot reach backend. Is the server running?');
         } finally {
             setLoading(false);
         }
@@ -39,20 +41,20 @@ export default function SetupWizard({ onComplete }) {
             <div className="wizard-header">
                 <Shield size={32} color="var(--accent-green)" />
                 <h2>Secure Node Connection</h2>
-                <p className="subtitle">Your keys are held exclusively in local RAM and wiped upon exit. They never touch a hard drive.</p>
+                <p className="subtitle">Your keys are held exclusively in local RAM and wiped upon exit.</p>
             </div>
-            
+
             <form onSubmit={handleConnect} className="wizard-form">
                 <div className="input-group">
                     <label>Coinbase Advanced Trade API Key</label>
                     <div className="input-with-icon">
                         <Key size={16} />
-                        <input 
-                            type="password" 
-                            value={coinbaseKey} 
-                            onChange={(e) => setCoinbaseKey(e.target.value)} 
+                        <input
+                            type="password"
+                            value={coinbaseKey}
+                            onChange={(e) => setCoinbaseKey(e.target.value)}
                             placeholder="organizations/{org_id}/apiKeys/{key_id}"
-                            required 
+                            required
                         />
                     </div>
                 </div>
@@ -61,26 +63,26 @@ export default function SetupWizard({ onComplete }) {
                     <label>Coinbase API Secret</label>
                     <div className="input-with-icon">
                         <Key size={16} />
-                        <input 
-                            type="password" 
-                            value={coinbaseSecret} 
-                            onChange={(e) => setCoinbaseSecret(e.target.value)} 
+                        <input
+                            type="password"
+                            value={coinbaseSecret}
+                            onChange={(e) => setCoinbaseSecret(e.target.value)}
                             placeholder="-----BEGIN EC PRIVATE KEY-----..."
-                            required 
+                            required
                         />
                     </div>
                 </div>
 
                 <div className="input-group">
-                    <label>OpenAI API Key (For AI Engine)</label>
+                    <label>Gemini API Key (Google AI Pro Engine)</label>
                     <div className="input-with-icon">
                         <Key size={16} />
-                        <input 
-                            type="password" 
-                            value={openAiKey} 
-                            onChange={(e) => setOpenAiKey(e.target.value)} 
-                            placeholder="sk-..."
-                            required 
+                        <input
+                            type="password"
+                            value={geminiKey}
+                            onChange={(e) => setGeminiKey(e.target.value)}
+                            placeholder="AIzaSy..."
+                            required
                         />
                     </div>
                 </div>

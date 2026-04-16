@@ -1,31 +1,38 @@
 const express = require('express');
 const router = express.Router();
-const memoryStore = require('../memoryStore');
+const userStore = require('../userStore');
+const { authenticate } = require('../middleware/auth');
 
-// Check if backend is configured
-router.get('/status', (req, res) => {
+// Public: health check
+router.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Protected: check if this user has configured their keys
+router.get('/status', authenticate, (req, res) => {
     res.json({
-        isConfigured: memoryStore.hasKeys(),
-        paperMode: true // Forced true for now based on user request
+        isConfigured: userStore.hasKeys(req.userId),
+        paperMode: true,
+        userId: req.userId
     });
 });
 
-// Securely ingest keys into memory (RAM)
-router.post('/setup', (req, res) => {
-    const { coinbaseKey, coinbaseSecret, openAiKey } = req.body;
-    
-    if (!coinbaseKey || !coinbaseSecret || !openAiKey) {
+// Protected: securely ingest keys into per-user memory
+router.post('/setup', authenticate, (req, res) => {
+    const { coinbaseKey, coinbaseSecret, geminiKey } = req.body;
+
+    if (!coinbaseKey || !coinbaseSecret || !geminiKey) {
         return res.status(400).json({ error: "Missing required keys." });
     }
 
-    memoryStore.setKeys(coinbaseKey, coinbaseSecret, openAiKey);
-    console.log("🔒 Credentials securely loaded into memory.");
-    res.json({ success: true, message: "Keys securely loaded." });
+    userStore.setKeys(req.userId, coinbaseKey, coinbaseSecret, geminiKey);
+    console.log(`🔒 Keys loaded for user ${req.userId}`);
+    res.json({ success: true, message: "Keys securely loaded for your session." });
 });
 
-// Fetch current mock/paper portfolio
-router.get('/portfolio', (req, res) => {
-    res.json(memoryStore.getPaperState());
+// Protected: fetch this user's portfolio
+router.get('/portfolio', authenticate, (req, res) => {
+    res.json(userStore.getPaperState(req.userId));
 });
 
 module.exports = router;
