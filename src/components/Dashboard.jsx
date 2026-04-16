@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Brain, TrendingUp, Zap, ChevronDown } from 'lucide-react';
-import { createChart, ColorType } from 'lightweight-charts';
+import { createChart, ColorType, AreaSeries } from 'lightweight-charts';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { sendProductChange } from '../services/websocket';
@@ -65,7 +65,7 @@ export default function Dashboard() {
 
         chartRef.current = chart;
 
-        const lineSeries = chart.addAreaSeries({
+        const lineSeries = chart.addSeries(AreaSeries, {
             lineColor: priceColor,
             topColor: isLiveMode ? 'rgba(255, 69, 58, 0.25)' : 'rgba(10, 132, 255, 0.25)',
             bottomColor: 'rgba(0, 0, 0, 0)',
