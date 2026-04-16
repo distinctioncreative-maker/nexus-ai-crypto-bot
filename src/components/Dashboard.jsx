@@ -4,7 +4,16 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { Activity, Brain, BookOpen, TrendingUp, ArrowUpRight } from 'lucide-react';
-import { useMarketData, ASSETS } from '../hooks/useMarketData';
+import { useMarketData } from '../hooks/useMarketData';
+import { useState as useLocalState, useEffect as useLocalEffect, useRef } from 'react';
+
+// Asset metadata lives here now that the hook connects to a real backend
+const ASSETS = {
+  BTC:  { basePrice: 67250,  name: 'Bitcoin',  color: '#F7931A' },
+  ETH:  { basePrice: 3420,   name: 'Ethereum', color: '#627EEA' },
+  SOL:  { basePrice: 152.5,  name: 'Solana',   color: '#9945FF' },
+  DOGE: { basePrice: 0.1625, name: 'Dogecoin', color: '#C2A633' },
+};
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 const ASSET_COLORS = { BTC: '#F7931A', ETH: '#627EEA', SOL: '#9945FF', DOGE: '#C2A633' };
@@ -315,15 +324,62 @@ function RecentTrades({ trades, isConnected }) {
 export default function Dashboard({ isConnected }) {
   const [activeAsset, setActiveAsset] = useState('BTC');
 
-  const {
-    data, prices, currentPrice, priceChange, priceChangePct,
-    aiStatus, aiThoughts, trades, balance, orderBook,
-    winRate, dailyPnl, totalTrades,
-  } = useMarketData(isConnected, activeAsset);
+  // New hook: connects to real backend ws://localhost:3001 when isConnected
+  // Returns: { data, currentPrice, aiStatus, trades, balance }
+  const { data, currentPrice, aiStatus, trades, balance } = useMarketData(isConnected);
 
-  const isUp         = priceChange >= 0;
-  const priceColor   = isUp ? 'var(--accent-green)' : 'var(--accent-red)';
-  const assetColor   = ASSET_COLORS[activeAsset];
+  // ── Derive price change from first tick ──────────────────────────────────
+  const firstPriceRef = useRef(null);
+  useLocalEffect(() => {
+    if (currentPrice && !firstPriceRef.current) firstPriceRef.current = currentPrice;
+    if (!isConnected) firstPriceRef.current = null;
+  }, [currentPrice, isConnected]);
+  const priceChange    = firstPriceRef.current ? currentPrice - firstPriceRef.current : 0;
+  const priceChangePct = firstPriceRef.current ? (priceChange / firstPriceRef.current) * 100 : 0;
+
+  // ── Accumulate aiStatus messages into a thought-log ──────────────────────
+  const [aiThoughts, setAiThoughts] = useLocalState([]);
+  const lastStatusRef = useRef('');
+  useLocalEffect(() => {
+    if (!isConnected || !aiStatus || aiStatus === lastStatusRef.current) return;
+    lastStatusRef.current = aiStatus;
+    setAiThoughts(prev => [{
+      id: Date.now(),
+      text: aiStatus,
+      time: new Date().toLocaleTimeString(),
+      type: aiStatus.toLowerCase().includes('execut') ? 'action' : 'analysis',
+    }, ...prev].slice(0, 14));
+  }, [aiStatus, isConnected]);
+  useLocalEffect(() => { if (!isConnected) setAiThoughts([]); }, [isConnected]);
+
+  // ── Local order book (visual mock, updates on price change) ──────────────
+  const [orderBook, setOrderBook] = useLocalState({ bids: [], asks: [] });
+  useLocalEffect(() => {
+    const price = currentPrice || ASSETS[activeAsset].basePrice;
+    const step  = price * 0.0004;
+    setOrderBook({
+      asks: Array.from({ length: 8 }, (_, i) => ({
+        price: price + (i + 1) * step * (0.8 + Math.random() * 0.4),
+        size:  (Math.random() * 3 + 0.05).toFixed(3),
+        depth: Math.random(),
+      })),
+      bids: Array.from({ length: 8 }, (_, i) => ({
+        price: price - (i + 1) * step * (0.8 + Math.random() * 0.4),
+        size:  (Math.random() * 3 + 0.05).toFixed(3),
+        depth: Math.random(),
+      })),
+    });
+  }, [currentPrice, activeAsset]);
+
+  // ── Derive summary stats from trades array ───────────────────────────────
+  const totalTrades  = trades.length;
+  const dailyPnl     = trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const closed       = trades.filter(t => t.pnl != null);
+  const winRate      = closed.length ? ((closed.filter(t => t.pnl > 0).length / closed.length) * 100).toFixed(0) : '—';
+
+  const isUp       = priceChange >= 0;
+  const priceColor = isUp ? 'var(--accent-green)' : 'var(--accent-red)';
+  const assetColor = ASSET_COLORS[activeAsset];
 
   return (
     <div>
@@ -390,36 +446,39 @@ export default function Dashboard({ isConnected }) {
 
       {/* Asset Switcher */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.75rem' }}>
-        {Object.keys(ASSETS).map(asset => (
-          <button
-            key={asset}
-            onClick={() => setActiveAsset(asset)}
-            style={{
-              padding: '0.3rem 0.8rem',
-              borderRadius: '20px',
-              border: activeAsset === asset
-                ? `1px solid ${ASSET_COLORS[asset]}44`
-                : '1px solid rgba(255,255,255,0.07)',
-              background: activeAsset === asset
-                ? `${ASSET_COLORS[asset]}16`
-                : 'transparent',
-              color: activeAsset === asset ? ASSET_COLORS[asset] : 'var(--text-secondary)',
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              fontFamily: 'var(--font-mono)',
-              letterSpacing: '0.06em',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            {asset}
-            {asset !== 'DOGE' && (
-              <span style={{ opacity: 0.55, marginLeft: '0.3rem', fontSize: '0.6rem' }}>
-                {fmtPrice(prices[asset], asset)}
-              </span>
-            )}
-          </button>
-        ))}
+        {Object.keys(ASSETS).map(asset => {
+          const livePrice = asset === 'BTC' && isConnected ? currentPrice : null;
+          return (
+            <button
+              key={asset}
+              onClick={() => setActiveAsset(asset)}
+              style={{
+                padding: '0.3rem 0.8rem',
+                borderRadius: '20px',
+                border: activeAsset === asset
+                  ? `1px solid ${ASSET_COLORS[asset]}44`
+                  : '1px solid rgba(255,255,255,0.07)',
+                background: activeAsset === asset
+                  ? `${ASSET_COLORS[asset]}16`
+                  : 'transparent',
+                color: activeAsset === asset ? ASSET_COLORS[asset] : 'var(--text-secondary)',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                fontFamily: 'var(--font-mono)',
+                letterSpacing: '0.06em',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {asset}
+              {livePrice && (
+                <span style={{ opacity: 0.55, marginLeft: '0.3rem', fontSize: '0.6rem' }}>
+                  {fmtPrice(livePrice, asset)}
+                </span>
+              )}
+            </button>
+          );
+        })}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           {isConnected && (
             <>
