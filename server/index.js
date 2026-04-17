@@ -156,6 +156,17 @@ wss.on('connection', async (ws, req) => {
                 sendData('ENGINE_STATE', userStore.getEngineState(userId));
             }
 
+            if (msg.type === 'SITUATION_ROOM_QUERY' && msg.payload?.message) {
+                const { answerUserQuery } = require('./services/aiEngine');
+                sendData('AI_STATUS', 'Situation Room: agents deliberating…');
+                const result = await answerUserQuery(userId, msg.payload.message, userStore.getSelectedProduct(userId));
+                if (result.error) {
+                    sendData('SITUATION_ROOM_RESPONSE', { error: result.error });
+                } else {
+                    sendData('SITUATION_ROOM_RESPONSE', { response: result.response });
+                }
+            }
+
             if (msg.type === 'SET_ENGINE_STATUS' && msg.payload?.engineStatus) {
                 const changed = userStore.setEngineStatus(userId, msg.payload.engineStatus);
                 if (changed) {

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Loader, AlertCircle, Radio } from 'lucide-react';
-import { authFetch } from '../lib/supabase';
-import { apiUrl, readApiResponse } from '../lib/api';
+import { sendSituationRoomQuery } from '../services/websocket';
 import { useStore } from '../store/useStore';
 
 const STARTER_PROMPTS = [
@@ -90,7 +89,7 @@ export default function SituationRoom() {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    const send = async (text) => {
+    const send = (text) => {
         const message = (text || input).trim();
         if (!message || loading) return;
         setInput('');
@@ -101,27 +100,15 @@ export default function SituationRoom() {
         setMessages(prev => [...prev, userMsg, thinkingMsg]);
         setLoading(true);
 
-        try {
-            const response = await authFetch(apiUrl('/api/situation-room'), {
-                method: 'POST',
-                body: JSON.stringify({ message, productId: selectedProduct })
-            });
-            const data = await readApiResponse(response);
+        sendSituationRoomQuery(message, (data) => {
             setMessages(prev => prev.map(m =>
                 m.id === thinkingMsg.id
-                    ? { ...m, content: data.response, thinking: false }
+                    ? { ...m, content: data.response || data.error, thinking: false, error: !!data.error }
                     : m
             ));
-        } catch (err) {
-            setMessages(prev => prev.map(m =>
-                m.id === thinkingMsg.id
-                    ? { ...m, content: err.message, thinking: false, error: true }
-                    : m
-            ));
-        } finally {
             setLoading(false);
             inputRef.current?.focus();
-        }
+        });
     };
 
     const handleKey = (e) => {

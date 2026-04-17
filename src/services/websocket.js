@@ -112,6 +112,13 @@ export const initWebSocket = async () => {
                 store.setKillSwitchActive(!!message.payload?.reason, message.payload?.reason || '');
                 break;
 
+            case 'SITUATION_ROOM_RESPONSE':
+                if (ws._situationRoomCallback) {
+                    ws._situationRoomCallback(message.payload);
+                    ws._situationRoomCallback = null;
+                }
+                break;
+
             default:
                 break;
         }
@@ -167,6 +174,16 @@ export const sendTradingModeChange = (mode) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'SET_TRADING_MODE', payload: { mode } }));
         useStore.getState().setTradingMode(mode);
+    }
+};
+
+export const sendSituationRoomQuery = (message, onResponse) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        // Store callback so the message handler can call it
+        ws._situationRoomCallback = onResponse;
+        ws.send(JSON.stringify({ type: 'SITUATION_ROOM_QUERY', payload: { message } }));
+    } else {
+        onResponse({ error: 'WebSocket not connected. Wait for connection and try again.' });
     }
 };
 
