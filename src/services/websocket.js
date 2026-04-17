@@ -3,9 +3,11 @@ import { getAccessToken } from '../lib/supabase';
 import { wsUrl as getBackendWsUrl } from '../lib/api';
 
 let ws = null;
+let deliberateClose = false;
 
 export const initWebSocket = async () => {
     if (ws && ws.readyState === WebSocket.OPEN) return;
+    deliberateClose = false;
 
     const token = await getAccessToken();
     const { selectedProduct } = useStore.getState();
@@ -30,6 +32,10 @@ export const initWebSocket = async () => {
                     value: message.payload.price
                 });
                 store.setCurrentPrice(message.payload.price);
+                // Track price per product so Portfolio can show P&L for selected product
+                if (message.payload.product) {
+                    store.updateProductPrices({ [message.payload.product]: message.payload.price });
+                }
                 break;
 
             case 'PORTFOLIO_STATE':
@@ -43,6 +49,32 @@ export const initWebSocket = async () => {
                 }
                 if (message.payload.tradingMode) {
                     store.setTradingMode(message.payload.tradingMode);
+                }
+                if (message.payload.engineStatus) {
+                    store.setEngineStatus(message.payload.engineStatus);
+                } else if (typeof message.payload.isLiveMode === 'boolean') {
+                    store.setIsLiveMode(message.payload.isLiveMode);
+                }
+                if (message.payload.selectedProduct) {
+                    store.setSelectedProduct(message.payload.selectedProduct);
+                }
+                if (message.payload.productHoldings) {
+                    store.setProductHoldings(message.payload.productHoldings);
+                }
+                break;
+
+            case 'HOLDINGS_PRICES':
+                if (message.payload && typeof message.payload === 'object') {
+                    store.updateProductPrices(message.payload);
+                }
+                break;
+
+            case 'ENGINE_STATE':
+                if (message.payload?.engineStatus) store.setEngineStatus(message.payload.engineStatus);
+                if (message.payload?.tradingMode) store.setTradingMode(message.payload.tradingMode);
+                if (typeof message.payload?.isLiveMode === 'boolean') store.setIsLiveMode(message.payload.isLiveMode);
+                if (typeof message.payload?.killSwitch === 'boolean') {
+                    store.setKillSwitchActive(message.payload.killSwitch, message.payload.killSwitchReason || '');
                 }
                 break;
 
@@ -87,9 +119,13 @@ export const initWebSocket = async () => {
 
     ws.onclose = () => {
         useStore.getState().setWsConnected(false);
-        useStore.getState().setAiStatus('🔴 Connection Lost — Reconnecting…');
+        if (!deliberateClose) {
+            useStore.getState().setAiStatus('🔴 Connection Lost — Reconnecting…');
+        }
         ws = null;
-        setTimeout(initWebSocket, 5000);
+        if (!deliberateClose) {
+            setTimeout(initWebSocket, 5000);
+        }
     };
 
     ws.onerror = (err) => {
@@ -99,6 +135,7 @@ export const initWebSocket = async () => {
 
 export const closeWebSocket = () => {
     if (ws) {
+        deliberateClose = true;
         ws.close();
         ws = null;
     }
@@ -131,4 +168,11 @@ export const sendTradingModeChange = (mode) => {
         ws.send(JSON.stringify({ type: 'SET_TRADING_MODE', payload: { mode } }));
         useStore.getState().setTradingMode(mode);
     }
+};
+
+export const sendEngineStatusChange = (engineStatus) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'SET_ENGINE_STATUS', payload: { engineStatus } }));
+    }
+    useStore.getState().setEngineStatus(engineStatus);
 };

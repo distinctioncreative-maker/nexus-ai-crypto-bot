@@ -109,6 +109,12 @@
     border: 1px solid rgba(10, 132, 255, 0.3);
 }
 
+.mode-pill.stopped {
+    background: rgba(255, 159, 10, 0.15);
+    color: var(--accent-orange);
+    border: 1px solid rgba(255, 159, 10, 0.5);
+}
+
 .mode-pill.live {
     background: rgba(255, 69, 58, 0.2);
     color: var(--accent-red);

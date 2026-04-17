@@ -16,6 +16,7 @@ function getSupabase() {
 }
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_SECRET || 'quant-distinction-creative-local-dev-key';
+const ENGINE_STATUSES = ['STOPPED', 'PAPER_RUNNING', 'LIVE_RUNNING'];
 
 class UserStore {
     constructor() {
@@ -34,6 +35,7 @@ class UserStore {
                 selectedProduct: 'BTC-USD',
                 tradingMode: 'FULL_AUTO',
                 isLiveMode: false,
+                engineStatus: 'STOPPED',
                 riskSettings: {
                     maxTradePercent: 2,
                     dailyLossLimitPercent: 5,
@@ -42,8 +44,14 @@ class UserStore {
                     volatilityReduceThreshold: 8,
                     stopLossPercent: 3,
                     takeProfitPercent: 6,
-                    enableKellySize: false
+                    enableKellySize: false,
+                    stopLossPrice: null,
+                    takeProfitPrice: null,
+                    // SmartTrade: multi-TP levels array [{pct, qtyPct}] and trailing stop
+                    multiTpLevels: null,
+                    trailingStopPct: null
                 },
+                activeStrategyId: 'COMBINED',
                 killSwitch: false,
                 killSwitchReason: '',
                 dailyStats: {
@@ -53,6 +61,9 @@ class UserStore {
                     tradesExecuted: 0
                 },
                 strategies: [],
+                strategyTournament: {
+                    lastCycleClosedTrades: 0
+                },
                 notifications: [],
                 pendingTrade: null,
                 paperTradingState: {
@@ -100,10 +111,12 @@ class UserStore {
             circuitBreaker: user.circuitBreaker,
             tradingMode: user.tradingMode,
             isLiveMode: user.isLiveMode,
+            engineStatus: user.engineStatus,
             riskSettings: user.riskSettings,
             killSwitch: user.killSwitch,
             killSwitchReason: user.killSwitchReason,
-            dailyStats: user.dailyStats
+            dailyStats: user.dailyStats,
+            productHoldings: user.productHoldings
         };
     }
 
@@ -138,13 +151,38 @@ class UserStore {
     setTradingMode(userId, mode) {
         const user = this._ensureUser(userId);
         if (['FULL_AUTO', 'AI_ASSISTED'].includes(mode)) {
+            if (user.engineStatus === 'LIVE_RUNNING' && mode === 'FULL_AUTO') {
+                user.tradingMode = 'AI_ASSISTED';
+                return;
+            }
             user.tradingMode = mode;
         }
     }
 
     setLiveMode(userId, isLive) {
+        this.setEngineStatus(userId, isLive ? 'LIVE_RUNNING' : 'PAPER_RUNNING');
+    }
+
+    setEngineStatus(userId, engineStatus) {
         const user = this._ensureUser(userId);
-        user.isLiveMode = isLive;
+        if (!ENGINE_STATUSES.includes(engineStatus)) return false;
+        user.engineStatus = engineStatus;
+        user.isLiveMode = engineStatus === 'LIVE_RUNNING';
+        if (engineStatus === 'LIVE_RUNNING') {
+            user.tradingMode = 'AI_ASSISTED';
+        }
+        return true;
+    }
+
+    getEngineState(userId) {
+        const user = this._ensureUser(userId);
+        return {
+            engineStatus: user.engineStatus,
+            isLiveMode: user.isLiveMode,
+            tradingMode: user.tradingMode,
+            killSwitch: user.killSwitch,
+            killSwitchReason: user.killSwitchReason
+        };
     }
 
     updateRiskSettings(userId, settings) {
@@ -280,7 +318,7 @@ class UserStore {
         };
 
         // Persist trade to Supabase (fire-and-forget)
-        getPersistence().saveTrade(getSupabase(), userId, trade).catch(() => {});
+        getPersistence().saveTrade(getSupabase(), userId, trade).catch(error => console.warn('saveTrade failed:', error.message));
 
         this.addNotification(userId, {
             type: 'TRADE_EXECUTED',
@@ -307,7 +345,7 @@ class UserStore {
             user.paperTradingState.learningHistory.pop();
         }
         // Persist learning record (fire-and-forget)
-        getPersistence().saveLearning(getSupabase(), userId, lesson).catch(() => {});
+        getPersistence().saveLearning(getSupabase(), userId, lesson).catch(error => console.warn('saveLearning failed:', error.message));
     }
 
     // Encryption helpers for persisting keys to Supabase
@@ -345,6 +383,14 @@ class UserStore {
         if (loaded.selectedProduct) user.selectedProduct = loaded.selectedProduct;
         if (loaded.tradingMode) user.tradingMode = loaded.tradingMode;
         if (typeof loaded.isLiveMode === 'boolean') user.isLiveMode = loaded.isLiveMode;
+        if (loaded.engineStatus && ENGINE_STATUSES.includes(loaded.engineStatus)) {
+            user.engineStatus = loaded.engineStatus;
+            user.isLiveMode = loaded.engineStatus === 'LIVE_RUNNING';
+            if (user.isLiveMode) user.tradingMode = 'AI_ASSISTED';
+        } else if (user.isLiveMode) {
+            user.engineStatus = 'LIVE_RUNNING';
+            user.tradingMode = 'AI_ASSISTED';
+        }
         if (loaded.riskSettings && Object.keys(loaded.riskSettings).length > 0) {
             Object.assign(user.riskSettings, loaded.riskSettings);
         }

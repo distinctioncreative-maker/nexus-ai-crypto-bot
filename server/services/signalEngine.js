@@ -97,65 +97,217 @@ async function getSignals() {
     return cache;
 }
 
+const { XMLParser } = require('fast-xml-parser');
+
+const CRYPTO_KEYWORDS = ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi', 'solana', 'sol', 'xrp', 'ripple', 'coinbase', 'binance', 'nft', 'altcoin', 'web3', 'token', 'stablecoin', 'layer', 'protocol'];
+const ASSET_MAP = { bitcoin: 'BTC', btc: 'BTC', ethereum: 'ETH', eth: 'ETH', solana: 'SOL', sol: 'SOL', xrp: 'XRP', ripple: 'XRP', doge: 'DOGE', dogecoin: 'DOGE', ada: 'ADA', cardano: 'ADA' };
+const BULLISH_WORDS = ['surge', 'soar', 'rally', 'gain', 'rise', 'bull', 'high', 'record', 'ath', 'breakout', 'adoption', 'launch', 'approve', 'etf', 'institutional'];
+const BEARISH_WORDS = ['crash', 'drop', 'fall', 'plunge', 'bear', 'dump', 'hack', 'ban', 'sue', 'sec', 'lawsuit', 'fine', 'low', 'sell-off', 'liquidat'];
+
+function deriveSentiment(text) {
+    const lower = text.toLowerCase();
+    const bullScore = BULLISH_WORDS.filter(w => lower.includes(w)).length;
+    const bearScore = BEARISH_WORDS.filter(w => lower.includes(w)).length;
+    if (bullScore > bearScore) return 'bullish';
+    if (bearScore > bullScore) return 'bearish';
+    return 'neutral';
+}
+
+function extractAssets(text) {
+    const lower = text.toLowerCase();
+    const found = new Set();
+    for (const [keyword, asset] of Object.entries(ASSET_MAP)) {
+        if (lower.includes(keyword)) found.add(asset);
+    }
+    const assets = [...found].slice(0, 4);
+    return assets.length > 0 ? assets : ['BTC'];
+}
+
+function relativeTime(dateStr) {
+    try {
+        const diffMin = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+        if (diffMin < 1) return 'Just now';
+        if (diffMin < 60) return `${diffMin}m ago`;
+        return `${Math.floor(diffMin / 60)}h ago`;
+    } catch { return 'Recently'; }
+}
+
+const RSS_FEEDS = [
+    { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
+    { url: 'https://cointelegraph.com/rss', source: 'Cointelegraph' },
+    { url: 'https://decrypt.co/feed', source: 'Decrypt' },
+    { url: 'https://blockworks.co/feed', source: 'Blockworks' },
+    { url: 'https://thedefiant.io/feed', source: 'The Defiant' },
+];
+
+const REDDIT_SUBS = ['CryptoCurrency', 'Bitcoin', 'ethereum', 'SatoshiStreetBets'];
+const TWITTER_ACCOUNTS = [
+    'CoinDesk', 'Cointelegraph', 'BitcoinMagazine', 'WuBlockchain', 'DocumentingBTC', 'saylor'
+];
+
+async function fetchRSS() {
+    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '_' });
+    const items = [];
+
+    await Promise.allSettled(RSS_FEEDS.map(async ({ url, source }) => {
+        try {
+            const res = await axios.get(url, {
+                timeout: 6000,
+                headers: { 'User-Agent': 'QuantBot/1.0 (+https://distinctioncreative.us)' }
+            });
+            const parsed = parser.parse(res.data);
+            const entries = parsed?.rss?.channel?.item || parsed?.feed?.entry || [];
+            const list = Array.isArray(entries) ? entries : [entries];
+
+            list.slice(0, 8).forEach((item, idx) => {
+                const headline = item.title?.['#text'] || item.title || '';
+                const link = item.link?.href || item.link || item.guid || '';
+                const pubDate = item.pubDate || item.published || item.updated || new Date().toISOString();
+                if (!headline) return;
+                items.push({
+                    id: `rss-${source}-${idx}-${Date.now()}`,
+                    source,
+                    headline: String(headline).trim(),
+                    sentiment: deriveSentiment(headline),
+                    impact: 5,
+                    assets: extractAssets(headline),
+                    time: relativeTime(pubDate),
+                    url: String(link).trim(),
+                    _ts: new Date(pubDate).getTime() || Date.now()
+                });
+            });
+        } catch (_error) {
+            return null;
+        }
+    }));
+
+    return items;
+}
+
+async function fetchReddit() {
+    const items = [];
+
+    await Promise.allSettled(REDDIT_SUBS.map(async (sub) => {
+        try {
+            const res = await axios.get(`https://www.reddit.com/r/${sub}/hot.json?limit=6`, {
+                timeout: 6000,
+                headers: { 'User-Agent': 'QuantBot/1.0 (+https://distinctioncreative.us)' }
+            });
+            const posts = res.data?.data?.children || [];
+            posts.forEach((p) => {
+                const post = p.data;
+                if (!post.title || post.is_self === false && !post.url) return;
+                const lower = post.title.toLowerCase();
+                const isCrypto = CRYPTO_KEYWORDS.some(kw => lower.includes(kw));
+                if (!isCrypto && sub === 'SatoshiStreetBets' ? false : !isCrypto) return;
+                items.push({
+                    id: `reddit-${sub}-${post.id}`,
+                    source: `r/${sub}`,
+                    headline: String(post.title).trim(),
+                    sentiment: deriveSentiment(post.title),
+                    impact: Math.min(8, 4 + Math.floor((post.score || 0) / 200)),
+                    assets: extractAssets(post.title),
+                    time: relativeTime(new Date(post.created_utc * 1000).toISOString()),
+                    url: `https://reddit.com${post.permalink}`,
+                    _ts: (post.created_utc || 0) * 1000
+                });
+            });
+        } catch (_error) {
+            return null;
+        }
+    }));
+
+    return items;
+}
+
+async function fetchTwitter() {
+    const bearerToken = process.env.TWITTER_BEARER_TOKEN;
+    if (!bearerToken) return [];
+
+    const items = [];
+    // Search recent tweets from high-signal crypto accounts
+    const query = `(from:${TWITTER_ACCOUNTS.join(' OR from:')}) lang:en -is:retweet`;
+
+    try {
+        const res = await axios.get('https://api.twitter.com/2/tweets/search/recent', {
+            params: {
+                query,
+                max_results: 20,
+                'tweet.fields': 'created_at,author_id,public_metrics',
+                expansions: 'author_id',
+                'user.fields': 'username'
+            },
+            headers: { Authorization: `Bearer ${bearerToken}` },
+            timeout: 8000
+        });
+
+        const tweets = res.data?.data || [];
+        const users = (res.data?.includes?.users || []).reduce((m, u) => { m[u.id] = u.username; return m; }, {});
+
+        tweets.forEach((t) => {
+            const lower = t.text.toLowerCase();
+            const isCrypto = CRYPTO_KEYWORDS.some(kw => lower.includes(kw));
+            if (!isCrypto) return;
+            const username = users[t.author_id] || 'crypto';
+            const likes = t.public_metrics?.like_count || 0;
+            items.push({
+                id: `tw-${t.id}`,
+                source: `@${username}`,
+                headline: t.text.replace(/https?:\/\/\S+/g, '').trim().slice(0, 200),
+                sentiment: deriveSentiment(t.text),
+                impact: Math.min(9, 5 + Math.floor(likes / 100)),
+                assets: extractAssets(t.text),
+                time: relativeTime(t.created_at),
+                url: `https://twitter.com/${username}/status/${t.id}`,
+                _ts: new Date(t.created_at).getTime() || Date.now()
+            });
+        });
+    } catch (_error) {
+        return [];
+    }
+
+    return items;
+}
+
 /**
- * Fetch real crypto news from CryptoPanic's free public API.
- * No auth token required for public posts.
+ * Fetch real crypto news from RSS feeds, Reddit, and X/Twitter.
+ * Falls back to cached results if all sources fail.
  */
 async function getNews() {
     const now = Date.now();
     if (newsCache && (now - newsCacheTime) < NEWS_TTL) return newsCache;
 
     try {
-        const res = await axios.get(
-            'https://cryptopanic.com/api/v1/posts/?public=true&kind=news&currencies=BTC,ETH,SOL,XRP,ADA,DOGE',
-            { timeout: 8000 }
-        );
+        const [rssItems, redditItems, twitterItems] = await Promise.all([
+            fetchRSS(),
+            fetchReddit(),
+            fetchTwitter()
+        ]);
 
-        const posts = res.data?.results || [];
+        const all = [...rssItems, ...redditItems, ...twitterItems];
 
-        const items = posts.slice(0, 25).map(post => {
-            // Derive sentiment from vote counts
-            const pos = post.votes?.positive || 0;
-            const neg = post.votes?.negative || 0;
-            const total = pos + neg;
-            let sentiment = 'neutral';
-            if (total > 0) {
-                const ratio = pos / total;
-                if (ratio > 0.55) sentiment = 'bullish';
-                else if (ratio < 0.45) sentiment = 'bearish';
-            }
-
-            // Impact score: base 4, boosted by vote volume
-            const votes = post.votes?.liked || 0;
-            const impact = Math.min(10, Math.max(3, 4 + Math.floor(votes / 5)));
-
-            // Affected assets
-            const assets = (post.currencies || []).map(c => c.code).filter(Boolean).slice(0, 4);
-            if (assets.length === 0) assets.push('BTC');
-
-            // Relative time
-            const published = new Date(post.published_at);
-            const diffMin = Math.floor((Date.now() - published.getTime()) / 60000);
-            const time = diffMin < 1 ? 'Just now' : diffMin < 60 ? `${diffMin}m ago` : `${Math.floor(diffMin / 60)}h ago`;
-
-            return {
-                id: post.id,
-                source: post.source?.title || 'CryptoPanic',
-                headline: post.title,
-                sentiment,
-                impact,
-                assets,
-                time,
-                url: post.url
-            };
+        // Deduplicate by headline similarity (simple: first 40 chars)
+        const seen = new Set();
+        const deduped = all.filter(item => {
+            const key = item.headline.toLowerCase().slice(0, 40);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
         });
 
-        newsCache = items;
-        newsCacheTime = now;
-        return items;
+        // Sort newest first
+        deduped.sort((a, b) => (b._ts || 0) - (a._ts || 0));
+
+        const items = deduped.slice(0, 40).map(({ _ts, ...item }) => item);
+
+        if (items.length > 0) {
+            newsCache = items;
+            newsCacheTime = now;
+        }
+
+        return items.length > 0 ? items : (newsCache || []);
     } catch (err) {
         console.error('News fetch error:', err.message);
-        // Return cached if available, else empty
         return newsCache || [];
     }
 }

@@ -33,7 +33,7 @@ export default function KillSwitch() {
                     color: 'var(--accent-red)',
                 }}>
                     <ShieldOff size={14} />
-                    <span>KILL SWITCH ACTIVE</span>
+                    <span title={killSwitchReason || 'Kill switch active'}>KILL SWITCH ACTIVE</span>
                     <button
                         onClick={handleReset}
                         style={{

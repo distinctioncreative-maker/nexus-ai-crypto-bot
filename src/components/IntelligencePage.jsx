@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Radio, TrendingUp, TrendingDown, Brain, BarChart2, Percent, RefreshCw, ExternalLink } from 'lucide-react';
 import { authFetch } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
@@ -205,6 +205,7 @@ export default function IntelligencePage() {
   const [filter, setFilter] = useState('All');
   const [newestId, setNewestId] = useState(null);
   const [realSignals, setRealSignals] = useState(null);
+  const [minutesSinceUpdate, setMinutesSinceUpdate] = useState(0);
 
   const fetchNews = () => {
     authFetch(apiUrl('/api/news'))
@@ -220,6 +221,7 @@ export default function IntelligencePage() {
             return data;
           });
           setLastUpdated(new Date());
+          setMinutesSinceUpdate(0);
         }
         setLoading(false);
       })
@@ -228,15 +230,23 @@ export default function IntelligencePage() {
 
   useEffect(() => {
     fetchNews();
-    authFetch(apiUrl('/api/signals')).then(r => r.json()).then(setRealSignals).catch(() => {});
+    authFetch(apiUrl('/api/signals')).then(r => r.json()).then(setRealSignals).catch(error => console.warn('Signal fetch failed:', error.message));
 
     const newsInterval = setInterval(fetchNews, 10 * 60 * 1000);
     const signalInterval = setInterval(() => {
-      authFetch(apiUrl('/api/signals')).then(r => r.json()).then(setRealSignals).catch(() => {});
+      authFetch(apiUrl('/api/signals')).then(r => r.json()).then(setRealSignals).catch(error => console.warn('Signal refresh failed:', error.message));
     }, 5 * 60 * 1000);
 
     return () => { clearInterval(newsInterval); clearInterval(signalInterval); };
   }, []);
+
+  useEffect(() => {
+    if (!lastUpdated) return undefined;
+    const interval = setInterval(() => {
+      setMinutesSinceUpdate(Math.floor((Date.now() - lastUpdated.getTime()) / 60000));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [lastUpdated]);
 
   const assetSentiments = useMemo(() => deriveAssetSentiments(news), [news]);
   const keywords = useMemo(() => extractKeywords(news), [news]);
@@ -331,7 +341,7 @@ export default function IntelligencePage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               {lastUpdated && (
                 <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>
-                  Updated {Math.floor((Date.now() - lastUpdated.getTime()) / 60000)}m ago
+                  Updated {minutesSinceUpdate}m ago
                 </span>
               )}
               <button

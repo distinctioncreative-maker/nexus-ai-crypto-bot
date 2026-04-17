@@ -43,7 +43,7 @@ export default function SetupWizard({ onComplete }) {
             <div className="wizard-header">
                 <Shield size={32} color="var(--accent-green)" />
                 <h2>Secure Node Connection</h2>
-                <p className="subtitle">Your keys are held exclusively in local RAM and wiped upon exit.</p>
+                <p className="subtitle">Your keys are encrypted server-side and only used by the backend trading engine.</p>
             </div>
 
             <form onSubmit={handleConnect} className="wizard-form">

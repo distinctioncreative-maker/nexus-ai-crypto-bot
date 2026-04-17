@@ -6,7 +6,12 @@ export const useStore = create((set) => ({
     isConfigured: false,
     setIsConfigured: (status) => set({ isConfigured: status }),
     isLiveMode: false,
-    toggleTradingMode: () => set((state) => ({ isLiveMode: !state.isLiveMode })),
+    setIsLiveMode: (status) => set({ isLiveMode: status }),
+    engineStatus: 'STOPPED',
+    setEngineStatus: (engineStatus) => set({
+        engineStatus,
+        isLiveMode: engineStatus === 'LIVE_RUNNING'
+    }),
 
     // Trading mode: FULL_AUTO | AI_ASSISTED
     tradingMode: 'FULL_AUTO',
@@ -37,6 +42,12 @@ export const useStore = create((set) => ({
     trades: [],
     addTrade: (trade) => set((state) => ({ trades: [trade, ...state.trades] })),
     setTrades: (trades) => set({ trades }),
+    // Multi-asset holdings: { 'BTC-USD': { assetHoldings, trades[] }, ... }
+    productHoldings: {},
+    setProductHoldings: (productHoldings) => set({ productHoldings }),
+    // Live prices for all held products (updated from HOLDINGS_PRICES WS messages)
+    productPrices: {},
+    updateProductPrices: (prices) => set((state) => ({ productPrices: { ...state.productPrices, ...prices } })),
 
     // AI & Audit
     aiStatus: 'Standby',
@@ -62,6 +73,10 @@ export const useStore = create((set) => ({
     setPendingTrade: (trade) => set({ pendingTrade: trade }),
     clearPendingTrade: () => set({ pendingTrade: null }),
 
+    // Available products (full Coinbase catalog)
+    availableProducts: [],
+    setAvailableProducts: (products) => set({ availableProducts: products }),
+
     // Risk settings (synced from backend on connect)
     riskSettings: {
         maxTradePercent: 2,
@@ -71,7 +86,11 @@ export const useStore = create((set) => ({
         volatilityReduceThreshold: 8,
         stopLossPercent: 3,
         takeProfitPercent: 6,
-        enableKellySize: false
+        enableKellySize: false,
+        stopLossPrice: null,
+        takeProfitPrice: null,
+        multiTpLevels: null,
+        trailingStopPct: null
     },
     setRiskSettings: (settings) => set({ riskSettings: settings }),
 

@@ -20,7 +20,7 @@ export default function NotificationCenter() {
         setOpen(o => !o);
         if (unreadCount > 0) {
             markAllRead();
-            authFetch(apiUrl('/api/notifications/read'), { method: 'POST' }).catch(() => {});
+            authFetch(apiUrl('/api/notifications/read'), { method: 'POST' }).catch(error => console.warn('Notification read sync failed:', error.message));
         }
     };
 

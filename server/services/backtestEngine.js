@@ -117,7 +117,7 @@ function simulateBacktest(candles, strategy, startCapital) {
     const tradeLog = [];
     let peak = startCapital;
     let maxDrawdown = 0;
-    let wins = 0, losses = 0;
+    let wins = 0;
     let grossProfit = 0, grossLoss = 0;
 
     for (let i = 1; i < candles.length; i++) {
@@ -135,7 +135,7 @@ function simulateBacktest(candles, strategy, startCapital) {
             const proceeds = holdings * execPrice * (1 - TAKER_FEE);
             const pnl = proceeds - (holdings * entryPrice);
             if (pnl > 0) { wins++; grossProfit += pnl; }
-            else { losses++; grossLoss += Math.abs(pnl); }
+            else { grossLoss += Math.abs(pnl); }
             balance = proceeds;
             tradeLog.push({ type: 'SELL', candle: i, price: execPrice, pnl, time: candles[i].ts });
             holdings = 0;
@@ -181,7 +181,7 @@ function simulateBacktest(candles, strategy, startCapital) {
 
 async function runBacktest(productId, days, strategy) {
     const coinId = COIN_ID_MAP[productId];
-    if (!coinId) throw new Error(`Unsupported product: ${productId}`);
+    if (!coinId) throw new Error(`Historical data unavailable for ${productId}. Backtests currently support mapped CoinGecko assets only.`);
 
     const candles = await fetchOHLCV(coinId, days);
     if (candles.length < 40) throw new Error('Not enough historical data');

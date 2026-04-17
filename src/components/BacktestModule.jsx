@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -75,25 +75,6 @@ function ConfigRow({ label, children }) {
     </div>
   );
 }
-
-const sel = {
-  width: '100%',
-  background: 'rgba(255,255,255,0.04)',
-  border: '1px solid rgba(255,255,255,0.08)',
-  borderRadius: '8px',
-  color: 'var(--text-primary)',
-  padding: '0.45rem 0.65rem',
-  fontSize: '0.8rem',
-  fontFamily: 'var(--font-ui)',
-  outline: 'none', cursor: 'pointer',
-};
-
-const sldr = {
-  width: '100%',
-  accentColor: 'var(--accent-blue)',
-  cursor: 'pointer',
-  height: '4px',
-};
 
 /* ── main component ───────────────────────────────────────────────────────── */
 export default function BacktestModule() {

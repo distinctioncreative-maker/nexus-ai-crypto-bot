@@ -1,12 +1,12 @@
 const userStore = require('../userStore');
 const { GoogleGenAI, Type } = require('@google/genai');
 const { getSignals } = require('./signalEngine');
-const { getWinningStrategy, evaluateAllStrategies } = require('./strategyEngine');
+const { getWinningStrategy, getStrategyConsensus } = require('./strategyEngine');
 
 async function evaluateMarketSignal(userId, pricePoints, productId) {
-    if (!userStore.hasKeys(userId)) return null;
-
     const keys = userStore.getKeys(userId);
+    if (!keys?.geminiApiKey) return null;
+
     const ai = new GoogleGenAI({ apiKey: keys.geminiApiKey });
     const state = userStore.getPaperState(userId);
     const product = productId || state.selectedProduct || 'BTC-USD';
@@ -14,7 +14,7 @@ async function evaluateMarketSignal(userId, pricePoints, productId) {
 
     const signals = await getSignals().catch(() => null);
     const winningStrategy = getWinningStrategy(userId);
-    const strategySignals = evaluateAllStrategies(userId, pricePoints, signals);
+    const consensus = getStrategyConsensus(userId, pricePoints, signals, product);
     const currentPrice = pricePoints[pricePoints.length - 1];
 
     const totalValue = state.balance + (state.assetHoldings * currentPrice);
@@ -39,10 +39,15 @@ async function evaluateMarketSignal(userId, pricePoints, productId) {
         ? `${signals.compositeScore > 0 ? '+' : ''}${signals.compositeScore}`
         : 'Unavailable';
 
-    const strategyContext = strategySignals.map(s => `  ${s.name}: ${s.signal}`).join('\n');
     const winnerDesc = winningStrategy
         ? `${winningStrategy.name} (Win Rate: ${winningStrategy.wins + winningStrategy.losses > 0 ? ((winningStrategy.wins / (winningStrategy.wins + winningStrategy.losses)) * 100).toFixed(0) : 0}%, Sharpe: ${winningStrategy.sharpe.toFixed(2)})`
-        : 'No active strategy yet';
+        : 'No active strategy yet (generation 1 — building track record)';
+    const dissentPct = Math.round(consensus.dissent * 100);
+    const consensusContext = `=== AGENT DEBATE (${consensus.totalAgents} strategy agents voted) ===
+Consensus Vote: ${consensus.consensus} — BUY ${consensus.buyPct}% | SELL ${consensus.sellPct}% | HOLD ${consensus.holdPct}%
+Dissent Level: ${dissentPct}% — ${consensus.dissent > 0.3 ? 'SPLIT VOTE: agents disagree, be cautious with confidence' : 'strong agreement among agents'}
+Leading Agent: ${consensus.topStrategy}
+Full Debate: ${consensus.debate}`;
 
     const prompt = `You are the Quant AI trading engine. You manage a paper trading portfolio.
 
@@ -62,8 +67,7 @@ DeFi TVL 7d Change: ${tvlStr}
 Polymarket BTC Bull Probability: ${polyStr}
 Composite Signal Score: ${compositeStr}
 
-=== STRATEGY SIGNALS ===
-${strategyContext}
+${consensusContext}
 
 === RISK CONTEXT ===
 Daily P&L today: $${dailyPnl.toFixed(2)}
@@ -100,6 +104,15 @@ Respond with strict JSON. Action must be exactly 'BUY', 'SELL', or 'HOLD'.`;
         });
 
         const decision = JSON.parse(response.text);
+        const modelAction = ['BUY', 'SELL', 'HOLD'].includes(decision.action) ? decision.action : 'HOLD';
+        const agentAction = consensus.consensus || 'HOLD';
+        const finalAction = agentAction !== 'HOLD' ? agentAction : modelAction;
+
+        if (finalAction !== modelAction) {
+            decision.reasoning = `[Agent consensus override: ${agentAction}] ${decision.reasoning}`;
+            decision.confidence = Math.min(decision.confidence || 0, 68);
+        }
+        decision.action = finalAction;
 
         if (decision.action === 'SELL' && state.trades.length > 0) {
             const lastBuyTrade = state.trades.find(t => t.type === 'BUY');
@@ -115,7 +128,7 @@ Respond with strict JSON. Action must be exactly 'BUY', 'SELL', or 'HOLD'.`;
             userStore.recordLearning(userId, decision.lesson_learned);
         }
 
-        return { ...decision, signals };
+        return { ...decision, signals, topStrategyId: consensus.topStrategyId, agentConsensus: consensus };
     } catch (error) {
         console.error(`AI Engine Error for user ${userId}:`, error.message);
         return null;

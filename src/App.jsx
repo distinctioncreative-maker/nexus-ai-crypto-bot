@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Bot as BotAuto, Cpu } from 'lucide-react';
 import { useStore } from './store/useStore';
-import { initWebSocket, closeWebSocket, sendTradingModeChange } from './services/websocket';
+import { initWebSocket, closeWebSocket, sendTradingModeChange, sendEngineStatusChange } from './services/websocket';
 import { supabase, authFetch } from './lib/supabase';
 import { apiUrl, readApiResponse } from './lib/api';
 import './App.css';
@@ -24,7 +24,10 @@ import LiveModeConfirmModal from './components/LiveModeConfirmModal';
 import Tutorial from './components/Tutorial';
 
 function App() {
-  const { isConfigured, setIsConfigured, isLiveMode, toggleTradingMode, tutorialsActive, toggleTutorials, tradingMode, setTradingMode } = useStore();
+  const {
+    isConfigured, setIsConfigured, isLiveMode, setIsLiveMode,
+    engineStatus, setEngineStatus, tutorialsActive, toggleTutorials, tradingMode, setTradingMode
+  } = useStore();
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
@@ -72,6 +75,9 @@ function App() {
       .then(readApiResponse)
       .then(data => {
         setIsConfigured(data.isConfigured);
+        if (data.engineStatus) setEngineStatus(data.engineStatus);
+        if (typeof data.isLiveMode === 'boolean') setIsLiveMode(data.isLiveMode);
+        if (data.tradingMode) setTradingMode(data.tradingMode);
         if (data.isConfigured) {
           initWebSocket();
         }
@@ -80,7 +86,7 @@ function App() {
         console.error("Backend check failed:", err);
         setIsConfigured(false);
       });
-  }, [user, setIsConfigured]);
+  }, [user, setIsConfigured, setEngineStatus, setIsLiveMode, setTradingMode]);
 
   const handleSignOut = async () => {
     if (supabase) {
@@ -89,6 +95,17 @@ function App() {
     setUser(null);
     setIsConfigured(false);
     closeWebSocket();
+  };
+
+  const updateEngineStatus = async (nextStatus) => {
+    const response = await authFetch(apiUrl('/api/engine'), {
+      method: 'POST',
+      body: JSON.stringify({ engineStatus: nextStatus })
+    });
+    const data = await readApiResponse(response);
+    setEngineStatus(data.engineStatus || nextStatus);
+    if (data.tradingMode) setTradingMode(data.tradingMode);
+    sendEngineStatusChange(data.engineStatus || nextStatus);
   };
 
   if (authLoading) return null;
@@ -124,25 +141,34 @@ function App() {
           </div>
 
           <div className="system-controls">
-            <div
-              className="mode-toggle-container"
-              onClick={() => {
-                if (!isLiveMode) {
-                  // Switching TO live — require confirmation
-                  setShowLiveConfirm(true);
-                } else {
-                  // Switching back to paper — immediate, no confirmation needed
-                  authFetch(apiUrl('/api/live-mode'), { method: 'POST', body: JSON.stringify({ isLive: false }) })
-                    .catch(() => {});
-                  toggleTradingMode();
-                }
-              }}
-              title={isLiveMode ? 'Click to switch back to paper simulation' : 'Click to activate live trading'}
-            >
-              <div className={`mode-pill ${isLiveMode ? 'live' : 'paper'}`}>
-                {isLiveMode ? <ShieldAlert size={16}/> : <Binary size={16}/>}
-                {isLiveMode ? 'LIVE EXECUTION' : 'PAPER SIMULATION'}
-              </div>
+            <div className="mode-toggle-container" title="Halt execution engine — no orders will be placed">
+              <button
+                className={`mode-pill ${engineStatus === 'STOPPED' ? 'stopped' : ''}`}
+                onClick={() => updateEngineStatus('STOPPED').catch(console.error)}
+                style={{ border: 'none', cursor: 'pointer' }}
+              >
+                <ShieldAlert size={16}/> STOPPED
+              </button>
+            </div>
+
+            <div className="mode-toggle-container" title="Run paper simulation — virtual trades only">
+              <button
+                className={`mode-pill ${engineStatus === 'PAPER_RUNNING' ? 'paper' : ''}`}
+                onClick={() => updateEngineStatus('PAPER_RUNNING').catch(console.error)}
+                style={{ border: 'none', cursor: 'pointer' }}
+              >
+                <Binary size={16}/> PAPER
+              </button>
+            </div>
+
+            <div className="mode-toggle-container" title="Live trading — AI Assisted, real Coinbase orders">
+              <button
+                className={`mode-pill ${engineStatus === 'LIVE_RUNNING' ? 'live' : ''}`}
+                onClick={() => setShowLiveConfirm(true)}
+                style={{ border: 'none', cursor: 'pointer' }}
+              >
+                <ShieldAlert size={16}/> LIVE
+              </button>
             </div>
 
             {/* Trading mode toggle: Full Auto / AI Assisted */}
@@ -222,11 +248,10 @@ function App() {
 
       {showLiveConfirm && (
         <LiveModeConfirmModal
-          onConfirm={() => {
-            authFetch(apiUrl('/api/live-mode'), { method: 'POST', body: JSON.stringify({ isLive: true }) })
-              .catch(() => {});
-            toggleTradingMode();
-            setShowLiveConfirm(false);
+            onConfirm={() => {
+            updateEngineStatus('LIVE_RUNNING')
+              .catch(console.error)
+              .finally(() => setShowLiveConfirm(false));
           }}
           onCancel={() => setShowLiveConfirm(false)}
         />

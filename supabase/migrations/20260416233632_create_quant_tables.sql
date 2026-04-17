@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
   asset_holdings   NUMERIC     DEFAULT 0,
   selected_product TEXT        DEFAULT 'BTC-USD',
   trading_mode     TEXT        DEFAULT 'FULL_AUTO',
+  engine_status    TEXT        DEFAULT 'STOPPED',
   is_live_mode     BOOLEAN     DEFAULT false,
   risk_settings    JSONB       DEFAULT '{}',
   circuit_breaker  JSONB       DEFAULT '{}',

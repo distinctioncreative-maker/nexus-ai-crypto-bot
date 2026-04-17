@@ -41,7 +41,7 @@ export default function LiveModeConfirmModal({ onConfirm, onCancel }) {
                 }}>
                     <p style={{ margin: '0 0 0.5rem 0' }}>
                         This will connect the AI directly to your <strong style={{ color: 'var(--text-primary)' }}>real Coinbase account</strong>.
-                        Every AI decision will place a real market order using your funds.
+                        Live mode is AI Assisted in this release: every proposed real order requires your confirmation.
                     </p>
                     <p style={{ margin: 0 }}>
                         You are solely responsible for all trades, profits, and losses.
@@ -61,7 +61,7 @@ export default function LiveModeConfirmModal({ onConfirm, onCancel }) {
                             style={{ marginTop: '2px', accentColor: '#FF9F0A', flexShrink: 0 }}
                         />
                         I understand this involves <strong style={{ color: 'var(--text-primary)' }}>&nbsp;real money&nbsp;</strong>
-                        and real Coinbase orders will be executed without my confirmation in Full Auto mode.
+                        and real Coinbase orders can execute only after I confirm each AI Assisted trade.
                     </label>
                     <label style={{
                         display: 'flex', alignItems: 'flex-start', gap: '0.75rem',

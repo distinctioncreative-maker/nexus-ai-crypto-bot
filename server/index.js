@@ -82,6 +82,22 @@ wss.on('connection', async (ws, req) => {
         }
     };
 
+    const sendPortfolioState = () => {
+        const snapshot = userStore.getPaperState(userId);
+        sendData('PORTFOLIO_STATE', {
+            balance: snapshot.balance,
+            assetHoldings: snapshot.assetHoldings,
+            trades: snapshot.trades,
+            selectedProduct: snapshot.selectedProduct,
+            riskSettings: snapshot.riskSettings,
+            tradingMode: snapshot.tradingMode,
+            isLiveMode: snapshot.isLiveMode,
+            engineStatus: snapshot.engineStatus,
+            productHoldings: snapshot.productHoldings
+        });
+        sendData('ENGINE_STATE', userStore.getEngineState(userId));
+    };
+
     // Load persisted state from DB before sending initial portfolio snapshot
     const loaded = await loadUserState(supabase, userId);
     if (loaded) {
@@ -94,32 +110,23 @@ wss.on('connection', async (ws, req) => {
 
     // Send current portfolio state immediately on connect so the UI initialises correctly
     const state = userStore.getPaperState(userId);
-    sendData('PORTFOLIO_STATE', {
-        balance: state.balance,
-        assetHoldings: state.assetHoldings,
-        trades: state.trades,
-        selectedProduct: state.selectedProduct
-    });
+    sendPortfolioState();
 
     // Start per-user market stream + AI
     const { cleanup, setProduct } = startUserStream(userId, sendData, state.selectedProduct);
 
     // Handle messages from the client
-    ws.on('message', (raw) => {
+    ws.on('message', async (raw) => {
         try {
             const msg = JSON.parse(raw);
 
             if (msg.type === 'CHANGE_PRODUCT' && msg.payload?.productId) {
                 const newProduct = msg.payload.productId;
-                setProduct(newProduct);
-                console.log(`🔀 User ${userId} switched to ${newProduct}`);
-                const updatedState = userStore.getPaperState(userId);
-                sendData('PORTFOLIO_STATE', {
-                    balance: updatedState.balance,
-                    assetHoldings: updatedState.assetHoldings,
-                    trades: updatedState.trades,
-                    selectedProduct: updatedState.selectedProduct
-                });
+                const changed = await setProduct(newProduct);
+                if (changed) {
+                    console.log(`🔀 User ${userId} switched to ${newProduct}`);
+                    sendPortfolioState();
+                }
             }
 
             if (msg.type === 'KILL_SWITCH') {
@@ -145,6 +152,16 @@ wss.on('connection', async (ws, req) => {
 
             if (msg.type === 'SET_TRADING_MODE' && msg.payload?.mode) {
                 userStore.setTradingMode(userId, msg.payload.mode);
+                saveUserSettings(supabase, userId, userStore._ensureUser(userId)).catch(error => console.warn('trading mode persistence failed:', error.message));
+                sendData('ENGINE_STATE', userStore.getEngineState(userId));
+            }
+
+            if (msg.type === 'SET_ENGINE_STATUS' && msg.payload?.engineStatus) {
+                const changed = userStore.setEngineStatus(userId, msg.payload.engineStatus);
+                if (changed) {
+                    saveUserSettings(supabase, userId, userStore._ensureUser(userId)).catch(error => console.warn('engine persistence failed:', error.message));
+                    sendPortfolioState();
+                }
             }
 
             if (msg.type === 'CONFIRM_TRADE') {
@@ -158,11 +175,11 @@ wss.on('connection', async (ws, req) => {
                         const finalAmount = amount || pending.amount;
                         const u = userStore._ensureUser(userId);
 
-                        if (u.isLiveMode) {
+                        if (u.engineStatus === 'LIVE_RUNNING') {
                             // AI Assisted + Live: place real Coinbase order
                             const { executeLiveOrder } = require('./services/marketStream');
-                            executeLiveOrder(userId, pending.side, finalAmount, pending.price, pending.product, pending.reasoning, sendData);
-                        } else {
+                            await executeLiveOrder(userId, pending.side, finalAmount, pending.price, pending.product, pending.reasoning, sendData);
+                        } else if (u.engineStatus === 'PAPER_RUNNING') {
                             // AI Assisted + Paper
                             const executed = userStore.executePaperTrade(
                                 userId, pending.side, finalAmount, pending.price, pending.reasoning
@@ -171,12 +188,21 @@ wss.on('connection', async (ws, req) => {
                                 sendData('TRADE_EXEC', executed);
                                 const notif = userStore.getNotifications(userId)[0];
                                 sendData('NOTIFICATION', notif);
+                                // Register SmartTrade position for multi-TP and trailing stop
+                                const { openPosition, closePosition, defaultTpConfig } = require('./services/positionManager');
+                                if (pending.side === 'BUY') {
+                                    openPosition(userId, pending.product, finalAmount, pending.price, defaultTpConfig(u.riskSettings));
+                                } else if (pending.side === 'SELL') {
+                                    closePosition(userId, pending.product);
+                                }
                             }
+                        } else {
+                            sendData('AI_STATUS', 'Trade ignored: execution engine is stopped.');
                         }
                     }
                 }
             }
-        } catch (e) {
+        } catch (_error) {
             // Ignore malformed messages
         }
     });
@@ -186,7 +212,7 @@ wss.on('connection', async (ws, req) => {
         cleanup();
         // Persist settings snapshot on disconnect (fire-and-forget)
         const userSnapshot = userStore._ensureUser(userId);
-        saveUserSettings(supabase, userId, userSnapshot).catch(() => {});
+        saveUserSettings(supabase, userId, userSnapshot).catch(error => console.warn('disconnect persistence failed:', error.message));
     });
 });
 
