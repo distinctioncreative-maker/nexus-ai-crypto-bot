@@ -3,7 +3,6 @@ const router = express.Router();
 const userStore = require('../userStore');
 const { authenticate, supabase } = require('../middleware/auth');
 const { getSignals, getNews } = require('../services/signalEngine');
-const { answerUserQuery } = require('../services/aiEngine');
 const { loadUserState, saveUserSettings } = require('../db/persistence');
 const { getCoinbaseProducts, isSupportedProduct } = require('../services/productCatalog');
 
@@ -77,6 +76,24 @@ function getStatusPayload(userId) {
 // Public: health check
 router.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Public: debug info — lists loaded env vars (keys masked) and route count
+router.get('/debug', (req, res) => {
+    res.json({
+        status: 'router_loaded',
+        timestamp: new Date().toISOString(),
+        env: {
+            SUPABASE_URL: process.env.SUPABASE_URL ? '✓ set' : '✗ missing',
+            SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? '✓ set' : '✗ missing',
+            FRONTEND_URL: process.env.FRONTEND_URL || '(not set)',
+            PORT: process.env.PORT || '3001',
+            NODE_ENV: process.env.NODE_ENV || 'development',
+        },
+        routes: router.stack
+            .filter(r => r.route)
+            .map(r => `${Object.keys(r.route.methods).join(',').toUpperCase()} /api${r.route.path}`)
+    });
 });
 
 // Protected: check if this user has configured their keys
@@ -325,6 +342,7 @@ router.post('/situation-room', authenticate, async (req, res) => {
     if (!message || !message.trim()) {
         return res.status(400).json({ error: 'Message is required.' });
     }
+    const { answerUserQuery } = require('../services/aiEngine');
     const result = await answerUserQuery(req.userId, message.trim(), productId);
     if (result.error) {
         return res.status(500).json({ error: result.error });

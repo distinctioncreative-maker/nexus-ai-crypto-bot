@@ -23,6 +23,7 @@ import RiskSettingsModal from './components/RiskSettingsModal';
 import PendingTradeCard from './components/PendingTradeCard';
 import LiveModeConfirmModal from './components/LiveModeConfirmModal';
 import Tutorial from './components/Tutorial';
+import DebugPanel from './components/DebugPanel';
 
 function App() {
   const {
@@ -132,6 +133,7 @@ function App() {
           setIsConfigured(true);
           initWebSocket();
         }} />
+        <DebugPanel />
       </div>
     );
   }
@@ -281,6 +283,8 @@ function App() {
           onCancel={() => setShowLiveConfirm(false)}
         />
       )}
+
+      <DebugPanel />
 
       {showReconfigure && (
         <div style={{
