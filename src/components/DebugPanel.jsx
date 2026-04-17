@@ -28,13 +28,15 @@ window.fetch = async (...args) => {
     const isApiCall = url.includes('/api/');
     if (!isApiCall) return _originalFetch(...args);
 
-    const shortUrl = url.replace(/^https?:\/\/[^/]+/, '');
-    debugLog('api', `→ ${method} ${shortUrl}`);
+    const shortUrl = url.replace(/^https?:\/\/[^/]+/, '') || '/';
+    debugLog('api', `→ ${method} ${shortUrl} [${url.match(/^https?:\/\/[^/]+/)?.[0] || 'relative'}]`);
 
     try {
         const res = await _originalFetch(...args);
         const statusIcon = res.ok ? '✓' : '✗';
-        debugLog(res.ok ? 'api' : 'error', `${statusIcon} ${res.status} ${method} ${shortUrl}`);
+        const ct = res.headers.get('content-type') || '';
+        const typeNote = ct.includes('html') ? ' [HTML — wrong endpoint or proxy]' : '';
+        debugLog(res.ok ? 'api' : 'error', `${statusIcon} ${res.status} ${method} ${shortUrl}${typeNote}`);
         return res;
     } catch (err) {
         debugLog('error', `✗ NETWORK ${method} ${shortUrl}: ${err.message}`);

@@ -34,7 +34,6 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
   const [showReconfigure, setShowReconfigure] = useState(false);
-  const [engineError, setEngineError] = useState('');
 
   // Listen for Supabase auth state changes
   useEffect(() => {
@@ -101,21 +100,11 @@ function App() {
     closeWebSocket();
   };
 
-  const updateEngineStatus = async (nextStatus) => {
-    setEngineError('');
-    try {
-      const response = await authFetch(apiUrl('/api/engine'), {
-        method: 'POST',
-        body: JSON.stringify({ engineStatus: nextStatus })
-      });
-      const data = await readApiResponse(response);
-      setEngineStatus(data.engineStatus || nextStatus);
-      if (data.tradingMode) setTradingMode(data.tradingMode);
-      sendEngineStatusChange(data.engineStatus || nextStatus);
-    } catch (err) {
-      setEngineError(err.message);
-      setTimeout(() => setEngineError(''), 4000);
-    }
+  const updateEngineStatus = (nextStatus) => {
+    // Send via WebSocket — the WS handler in server/index.js persists + broadcasts back
+    sendEngineStatusChange(nextStatus);
+    // Optimistically update local state so the button flips immediately
+    setEngineStatus(nextStatus);
   };
 
   if (authLoading) return null;
@@ -197,11 +186,6 @@ function App() {
               </div>
             </div>
 
-            {engineError && (
-              <span style={{ fontSize: '0.7rem', color: 'var(--accent-red)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                ⚠️ {engineError}
-              </span>
-            )}
             <KillSwitch />
             <NotificationCenter />
             <RiskSettingsModal />
@@ -276,9 +260,8 @@ function App() {
       {showLiveConfirm && (
         <LiveModeConfirmModal
             onConfirm={() => {
-            updateEngineStatus('LIVE_RUNNING')
-              .catch(console.error)
-              .finally(() => setShowLiveConfirm(false));
+            updateEngineStatus('LIVE_RUNNING');
+            setShowLiveConfirm(false);
           }}
           onCancel={() => setShowLiveConfirm(false)}
         />
