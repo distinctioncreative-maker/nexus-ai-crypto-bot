@@ -135,4 +135,70 @@ Respond with strict JSON. Action must be exactly 'BUY', 'SELL', or 'HOLD'.`;
     }
 }
 
-module.exports = { evaluateMarketSignal };
+/**
+ * Situation Room: answer a user's free-form question about the market,
+ * portfolio, or agents with full live context injected.
+ */
+async function answerUserQuery(userId, userMessage, productId) {
+    const keys = userStore.getKeys(userId);
+    if (!keys?.geminiApiKey) return { error: 'No Gemini key configured.' };
+
+    const ai = new GoogleGenAI({ apiKey: keys.geminiApiKey });
+    const state = userStore.getPaperState(userId);
+    const product = productId || state.selectedProduct || 'BTC-USD';
+    const [baseAsset] = product.split('-');
+
+    const signals = await getSignals().catch(() => null);
+    const { getStrategies } = require('../userStore');
+    const strategies = userStore.getStrategies(userId);
+    const winningStrategy = strategies.sort((a, b) => b.sharpe - a.sharpe)[0];
+
+    const fearGreedStr = signals?.fearGreed ? `${signals.fearGreed.value}/100 — ${signals.fearGreed.classification}` : 'Unavailable';
+    const compositeStr = signals ? `${signals.compositeScore > 0 ? '+' : ''}${signals.compositeScore}` : 'Unavailable';
+
+    const strategyContext = strategies.map(s =>
+        `  • ${s.name}: ${s.wins}W/${s.losses}L, Sharpe ${s.sharpe.toFixed(2)}, last signal: ${s.lastSignal || 'HOLD'}`
+    ).join('\n');
+
+    const learningContext = state.learningHistory.slice(0, 8).map((h, i) => `  ${i + 1}. ${h.knowledge}`).join('\n');
+
+    const systemPrompt = `You are the Quant AI Situation Room — a team of 5 expert quantitative trading agents embedded in a crypto trading terminal. You have direct access to live market data, portfolio state, agent signals, and learned rules.
+
+Your job: answer the user's question honestly and directly, as a knowledgeable trading partner. Be concise but substantive. If they ask for an action or analysis, provide specific, actionable intelligence. Use numbers. Reference actual signals. Speak as the agent team collectively.
+
+Do NOT start responses with "I" or "As an AI". Speak directly as "We" or "The agents". Format with short paragraphs, not bullet soup.`;
+
+    const contextPrompt = `=== LIVE CONTEXT ===
+Portfolio: $${state.balance.toFixed(2)} cash + ${state.assetHoldings} ${baseAsset} holdings
+Watching: ${product}
+Fear & Greed: ${fearGreedStr}
+Composite Signal: ${compositeStr}
+Engine: ${state.engineStatus || 'STOPPED'} | Mode: ${state.tradingMode || 'FULL_AUTO'}
+
+=== AGENT TOURNAMENT ===
+${strategyContext || 'No trades yet — agents initializing.'}
+${winningStrategy ? `\nLeading Agent: ${winningStrategy.name} (${winningStrategy.wins}W/${winningStrategy.losses}L)` : ''}
+
+=== LEARNED RULES ===
+${learningContext || 'No rules learned yet — awaiting first trades.'}
+
+=== USER MESSAGE ===
+${userMessage}`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: contextPrompt,
+            config: {
+                systemInstruction: systemPrompt,
+                maxOutputTokens: 600
+            }
+        });
+        return { response: response.text, signals };
+    } catch (error) {
+        console.error('Situation Room AI error:', error.message);
+        return { error: error.message };
+    }
+}
+
+module.exports = { evaluateMarketSignal, answerUserQuery };

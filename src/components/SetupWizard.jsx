@@ -48,35 +48,7 @@ export default function SetupWizard({ onComplete }) {
 
             <form onSubmit={handleConnect} className="wizard-form">
                 <div className="input-group">
-                    <label>Coinbase Advanced Trade API Key</label>
-                    <div className="input-with-icon">
-                        <Key size={16} />
-                        <input
-                            type="password"
-                            value={coinbaseKey}
-                            onChange={(e) => setCoinbaseKey(e.target.value)}
-                            placeholder="organizations/{org_id}/apiKeys/{key_id}"
-                            required
-                        />
-                    </div>
-                </div>
-
-                <div className="input-group">
-                    <label>Coinbase API Secret</label>
-                    <div className="input-with-icon">
-                        <Key size={16} />
-                        <input
-                            type="password"
-                            value={coinbaseSecret}
-                            onChange={(e) => setCoinbaseSecret(e.target.value)}
-                            placeholder="-----BEGIN EC PRIVATE KEY-----..."
-                            required
-                        />
-                    </div>
-                </div>
-
-                <div className="input-group">
-                    <label>Gemini API Key (Google AI Pro Engine)</label>
+                    <label>Gemini API Key <span style={{color:'var(--accent-green)',fontSize:'0.7rem'}}>REQUIRED — powers all AI</span></label>
                     <div className="input-with-icon">
                         <Key size={16} />
                         <input
@@ -85,6 +57,32 @@ export default function SetupWizard({ onComplete }) {
                             onChange={(e) => setGeminiKey(e.target.value)}
                             placeholder="AIzaSy..."
                             required
+                        />
+                    </div>
+                </div>
+
+                <div className="input-group">
+                    <label>Coinbase API Key <span style={{color:'var(--text-secondary)',fontSize:'0.7rem'}}>optional — for live trading</span></label>
+                    <div className="input-with-icon">
+                        <Key size={16} />
+                        <input
+                            type="password"
+                            value={coinbaseKey}
+                            onChange={(e) => setCoinbaseKey(e.target.value)}
+                            placeholder="organizations/{org_id}/apiKeys/{key_id}"
+                        />
+                    </div>
+                </div>
+
+                <div className="input-group">
+                    <label>Coinbase API Secret <span style={{color:'var(--text-secondary)',fontSize:'0.7rem'}}>optional — for live trading</span></label>
+                    <div className="input-with-icon">
+                        <Key size={16} />
+                        <input
+                            type="password"
+                            value={coinbaseSecret}
+                            onChange={(e) => setCoinbaseSecret(e.target.value)}
+                            placeholder="-----BEGIN EC PRIVATE KEY-----..."
                         />
                     </div>
                 </div>

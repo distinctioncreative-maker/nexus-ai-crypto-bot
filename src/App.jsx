@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Bot as BotAuto, Cpu } from 'lucide-react';
+import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Cpu, Radio, KeyRound } from 'lucide-react';
 import { useStore } from './store/useStore';
 import { initWebSocket, closeWebSocket, sendTradingModeChange, sendEngineStatusChange } from './services/websocket';
 import { supabase, authFetch } from './lib/supabase';
@@ -13,6 +13,7 @@ import SetupWizard from './components/SetupWizard';
 import Dashboard from './components/Dashboard';
 import BacktestModule from './components/BacktestModule';
 import AgentsPage from './components/AgentsPage';
+import SituationRoom from './components/SituationRoom';
 import IntelligencePage from './components/IntelligencePage';
 import PortfolioPage from './components/PortfolioPage';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -31,6 +32,8 @@ function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
+  const [showReconfigure, setShowReconfigure] = useState(false);
+  const [engineError, setEngineError] = useState('');
 
   // Listen for Supabase auth state changes
   useEffect(() => {
@@ -98,14 +101,20 @@ function App() {
   };
 
   const updateEngineStatus = async (nextStatus) => {
-    const response = await authFetch(apiUrl('/api/engine'), {
-      method: 'POST',
-      body: JSON.stringify({ engineStatus: nextStatus })
-    });
-    const data = await readApiResponse(response);
-    setEngineStatus(data.engineStatus || nextStatus);
-    if (data.tradingMode) setTradingMode(data.tradingMode);
-    sendEngineStatusChange(data.engineStatus || nextStatus);
+    setEngineError('');
+    try {
+      const response = await authFetch(apiUrl('/api/engine'), {
+        method: 'POST',
+        body: JSON.stringify({ engineStatus: nextStatus })
+      });
+      const data = await readApiResponse(response);
+      setEngineStatus(data.engineStatus || nextStatus);
+      if (data.tradingMode) setTradingMode(data.tradingMode);
+      sendEngineStatusChange(data.engineStatus || nextStatus);
+    } catch (err) {
+      setEngineError(err.message);
+      setTimeout(() => setEngineError(''), 4000);
+    }
   };
 
   if (authLoading) return null;
@@ -186,9 +195,21 @@ function App() {
               </div>
             </div>
 
+            {engineError && (
+              <span style={{ fontSize: '0.7rem', color: 'var(--accent-red)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                ⚠️ {engineError}
+              </span>
+            )}
             <KillSwitch />
             <NotificationCenter />
             <RiskSettingsModal />
+            <button
+              className="tutorial-btn"
+              onClick={() => setShowReconfigure(true)}
+              title="Update API Keys"
+            >
+              <KeyRound size={18} />
+            </button>
 
             <button
               className={`tutorial-btn ${tutorialsActive ? 'active' : ''}`}
@@ -225,6 +246,9 @@ function App() {
             <NavLink to="/backtest" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
               <Binary size={22}/> <span className="nav-label">Backtest</span>
             </NavLink>
+            <NavLink to="/situation-room" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
+              <Radio size={22}/> <span className="nav-label">Situation Room</span>
+            </NavLink>
           </nav>
 
           <main className="main-content-area">
@@ -236,6 +260,7 @@ function App() {
                 <Route path="/intelligence" element={<IntelligencePage />} />
                 <Route path="/agents" element={<AgentsPage />} />
                 <Route path="/backtest" element={<BacktestModule />} />
+                <Route path="/situation-room" element={<SituationRoom />} />
               </Routes>
             </ErrorBoundary>
           </main>
@@ -255,6 +280,18 @@ function App() {
           }}
           onCancel={() => setShowLiveConfirm(false)}
         />
+      )}
+
+      {showReconfigure && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setShowReconfigure(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, padding: '1rem' }}>
+            <SetupWizard onComplete={() => setShowReconfigure(false)} />
+          </div>
+        </div>
       )}
     </BrowserRouter>
   );

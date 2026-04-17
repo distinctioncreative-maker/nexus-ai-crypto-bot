@@ -3,6 +3,7 @@ const router = express.Router();
 const userStore = require('../userStore');
 const { authenticate, supabase } = require('../middleware/auth');
 const { getSignals, getNews } = require('../services/signalEngine');
+const { answerUserQuery } = require('../services/aiEngine');
 const { loadUserState, saveUserSettings } = require('../db/persistence');
 const { getCoinbaseProducts, isSupportedProduct } = require('../services/productCatalog');
 
@@ -291,6 +292,44 @@ router.get('/products', authenticate, async (req, res) => {
 router.get('/products/:productId/validate', authenticate, async (req, res) => {
     const productId = req.params.productId;
     res.json({ productId, supported: await isSupportedProduct(productId) });
+});
+
+// Protected: reconfigure keys (same as setup but clears existing first)
+router.post('/reconfigure', authenticate, async (req, res) => {
+    const { coinbaseKey, coinbaseSecret, geminiKey } = req.body;
+
+    if (!geminiKey) {
+        return res.status(400).json({ error: 'Gemini API key is required.' });
+    }
+
+    const geminiResult = await validateGeminiKey(geminiKey);
+    if (!geminiResult.valid) {
+        return res.status(400).json({ error: geminiResult.error });
+    }
+
+    if (coinbaseKey && coinbaseSecret) {
+        const cbResult = await validateCoinbaseKeys(coinbaseKey, coinbaseSecret);
+        if (!cbResult.valid) {
+            return res.status(400).json({ error: cbResult.error });
+        }
+    }
+
+    userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null, geminiKey);
+    saveUserSettings(supabase, req.userId, userStore._ensureUser(req.userId)).catch(error => console.warn('reconfigure persistence failed:', error.message));
+    res.json({ success: true, message: 'Keys updated.' });
+});
+
+// Protected: Situation Room — AI answers free-form user questions with live context
+router.post('/situation-room', authenticate, async (req, res) => {
+    const { message, productId } = req.body;
+    if (!message || !message.trim()) {
+        return res.status(400).json({ error: 'Message is required.' });
+    }
+    const result = await answerUserQuery(req.userId, message.trim(), productId);
+    if (result.error) {
+        return res.status(500).json({ error: result.error });
+    }
+    res.json(result);
 });
 
 module.exports = router;
