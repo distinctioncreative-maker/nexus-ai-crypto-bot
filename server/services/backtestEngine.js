@@ -40,7 +40,7 @@ async function fetchOHLCV(coinId, days) {
  * Returns 'BUY' | 'SELL' | 'HOLD'
  */
 function getSignalFromHistory(strategy, closePrices, idx) {
-    if (idx < 35) return 'HOLD'; // not enough history
+    if (idx < 10) return 'HOLD'; // not enough history
     const window = closePrices.slice(0, idx + 1);
 
     switch (strategy) {
@@ -181,10 +181,13 @@ function simulateBacktest(candles, strategy, startCapital) {
 
 async function runBacktest(productId, days, strategy) {
     const coinId = COIN_ID_MAP[productId];
-    if (!coinId) throw new Error(`Historical data unavailable for ${productId}. Backtests currently support mapped CoinGecko assets only.`);
+    if (!coinId) throw new Error(`Historical data unavailable for ${productId}. Backtests currently support: ${Object.keys(COIN_ID_MAP).join(', ')}`);
 
-    const candles = await fetchOHLCV(coinId, days);
-    if (candles.length < 40) throw new Error('Not enough historical data');
+    // CoinGecko free tier returns 4-day candles for days>=90, giving only ~22 points.
+    // Request 365 days (91 candles) to ensure enough data, then simulate over requested period.
+    const fetchDays = days >= 90 ? 365 : days;
+    const candles = await fetchOHLCV(coinId, fetchDays);
+    if (candles.length < 15) throw new Error(`CoinGecko returned only ${candles.length} candles — API may be rate-limited. Try again in 60 seconds.`);
 
     const splitIdx = Math.floor(candles.length * 0.8);
     const trainCandles = candles.slice(0, splitIdx);
