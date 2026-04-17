@@ -135,13 +135,55 @@ Respond with strict JSON. Action must be exactly 'BUY', 'SELL', or 'HOLD'.`;
     }
 }
 
+const AGENT_PERSONAS = [
+    {
+        id: 'MOMENTUM',
+        name: 'Atlas',
+        role: 'Momentum Analyst',
+        color: '#F7931A',
+        personality: `You are Atlas, the Momentum Analyst. You live and breathe trend strength, moving average crossovers, and volume confirmation. You are direct, confident, and always reference price action. You speak in first person as Atlas. Keep responses to 2-3 sentences — sharp and specific.`
+    },
+    {
+        id: 'MEAN_REVERSION',
+        name: 'Vera',
+        role: 'Mean Reversion Quant',
+        color: '#627EEA',
+        personality: `You are Vera, the Mean Reversion Quant. You focus on RSI extremes, overbought/oversold conditions, and statistical deviation from the mean. You are measured, analytical, and often play contrarian. You speak in first person as Vera. Keep responses to 2-3 sentences — precise and data-driven.`
+    },
+    {
+        id: 'TREND_FOLLOWING',
+        name: 'Rex',
+        role: 'Trend Following Strategist',
+        color: '#9945FF',
+        personality: `You are Rex, the Trend Following Strategist. You ride sustained trends using EMA clouds and ADX filters. You are patient, disciplined, and never fight the tape. You speak in first person as Rex. Keep responses to 2-3 sentences — calculated and resolute.`
+    },
+    {
+        id: 'SENTIMENT_DRIVEN',
+        name: 'Luna',
+        role: 'Sentiment & Macro Intelligence',
+        color: '#34C759',
+        personality: `You are Luna, the Sentiment & Macro Intelligence. You track Fear & Greed, social signals, DeFi TVL trends, and Polymarket probabilities. You see the human side of the market. You speak in first person as Luna. Keep responses to 2-3 sentences — intuitive and macro-aware.`
+    },
+    {
+        id: 'COMBINED',
+        name: 'Orion',
+        role: 'Chief Strategist',
+        color: '#0A84FF',
+        personality: `You are Orion, the Chief Strategist. You synthesize ALL signals — technical, sentiment, and agent votes — into the final call. You are the decision-maker. You always give a clear recommendation at the end. You speak in first person as Orion. Keep responses to 3-4 sentences. Always end with a clear stance: LONG, FLAT, or WATCH.`
+    }
+];
+
 /**
- * Situation Room: answer a user's free-form question about the market,
- * portfolio, or agents with full live context injected.
+ * Situation Room: 5 agents each give individual responses in parallel.
+ * Calls onAgentResponse(agentId, name, role, color, text) as each finishes.
+ * Returns a promise that resolves when all 5 are done.
  */
-async function answerUserQuery(userId, userMessage, productId) {
+async function answerUserQueryMultiAgent(userId, userMessage, productId, onAgentResponse) {
     const keys = userStore.getKeys(userId);
-    if (!keys?.geminiApiKey) return { error: 'No Gemini key configured.' };
+    if (!keys?.geminiApiKey) {
+        onAgentResponse('ERROR', 'System', 'Error', '#ff453a', 'No Gemini key configured. Go to Setup and enter your API key.');
+        return;
+    }
 
     const ai = new GoogleGenAI({ apiKey: keys.geminiApiKey });
     const state = userStore.getPaperState(userId);
@@ -149,56 +191,44 @@ async function answerUserQuery(userId, userMessage, productId) {
     const [baseAsset] = product.split('-');
 
     const signals = await getSignals().catch(() => null);
-    const { getStrategies } = require('../userStore');
     const strategies = userStore.getStrategies(userId);
-    const winningStrategy = strategies.sort((a, b) => b.sharpe - a.sharpe)[0];
 
-    const fearGreedStr = signals?.fearGreed ? `${signals.fearGreed.value}/100 — ${signals.fearGreed.classification}` : 'Unavailable';
-    const compositeStr = signals ? `${signals.compositeScore > 0 ? '+' : ''}${signals.compositeScore}` : 'Unavailable';
-
+    const fearGreedStr = signals?.fearGreed ? `${signals.fearGreed.value}/100 — ${signals.fearGreed.classification}` : 'N/A';
+    const compositeStr = signals ? `${signals.compositeScore > 0 ? '+' : ''}${signals.compositeScore}` : 'N/A';
     const strategyContext = strategies.map(s =>
-        `  • ${s.name}: ${s.wins}W/${s.losses}L, Sharpe ${s.sharpe.toFixed(2)}, last signal: ${s.lastSignal || 'HOLD'}`
-    ).join('\n');
+        `${s.name}: ${s.wins}W/${s.losses}L, Sharpe ${s.sharpe.toFixed(2)}, signal=${s.lastSignal || 'HOLD'}`
+    ).join(' | ');
+    const learningContext = state.learningHistory.slice(0, 5).map((h, i) => `${i + 1}. ${h.knowledge}`).join('\n');
 
-    const learningContext = state.learningHistory.slice(0, 8).map((h, i) => `  ${i + 1}. ${h.knowledge}`).join('\n');
-
-    const systemPrompt = `You are the Quant AI Situation Room — a team of 5 expert quantitative trading agents embedded in a crypto trading terminal. You have direct access to live market data, portfolio state, agent signals, and learned rules.
-
-Your job: answer the user's question honestly and directly, as a knowledgeable trading partner. Be concise but substantive. If they ask for an action or analysis, provide specific, actionable intelligence. Use numbers. Reference actual signals. Speak as the agent team collectively.
-
-Do NOT start responses with "I" or "As an AI". Speak directly as "We" or "The agents". Format with short paragraphs, not bullet soup.`;
-
-    const contextPrompt = `=== LIVE CONTEXT ===
-Portfolio: $${state.balance.toFixed(2)} cash + ${state.assetHoldings} ${baseAsset} holdings
-Watching: ${product}
-Fear & Greed: ${fearGreedStr}
-Composite Signal: ${compositeStr}
+    const sharedContext = `=== LIVE MARKET DATA ===
+Asset: ${product} | Price context from last session
+Portfolio: $${state.balance.toFixed(2)} cash, ${state.assetHoldings} ${baseAsset} holdings
 Engine: ${state.engineStatus || 'STOPPED'} | Mode: ${state.tradingMode || 'FULL_AUTO'}
-
-=== AGENT TOURNAMENT ===
-${strategyContext || 'No trades yet — agents initializing.'}
-${winningStrategy ? `\nLeading Agent: ${winningStrategy.name} (${winningStrategy.wins}W/${winningStrategy.losses}L)` : ''}
-
-=== LEARNED RULES ===
-${learningContext || 'No rules learned yet — awaiting first trades.'}
+Fear & Greed: ${fearGreedStr} | Composite: ${compositeStr}
+Agent Signals: ${strategyContext || 'No signals yet'}
+Learned Rules: ${learningContext || 'None yet'}
 
 === USER MESSAGE ===
 ${userMessage}`;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: contextPrompt,
-            config: {
-                systemInstruction: systemPrompt,
-                maxOutputTokens: 600
-            }
-        });
-        return { response: response.text, signals };
-    } catch (error) {
-        console.error('Situation Room AI error:', error.message);
-        return { error: error.message };
-    }
+    // Run all 5 agents in parallel, call onAgentResponse as each resolves
+    const agentCalls = AGENT_PERSONAS.map(async (agent) => {
+        try {
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.0-flash',
+                contents: sharedContext,
+                config: {
+                    systemInstruction: agent.personality,
+                    maxOutputTokens: 200
+                }
+            });
+            onAgentResponse(agent.id, agent.name, agent.role, agent.color, response.text);
+        } catch (err) {
+            onAgentResponse(agent.id, agent.name, agent.role, agent.color, `[offline: ${err.message}]`);
+        }
+    });
+
+    await Promise.allSettled(agentCalls);
 }
 
-module.exports = { evaluateMarketSignal, answerUserQuery };
+module.exports = { evaluateMarketSignal, answerUserQueryMultiAgent };

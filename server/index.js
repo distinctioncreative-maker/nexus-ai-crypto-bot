@@ -157,14 +157,17 @@ wss.on('connection', async (ws, req) => {
             }
 
             if (msg.type === 'SITUATION_ROOM_QUERY' && msg.payload?.message) {
-                const { answerUserQuery } = require('./services/aiEngine');
-                sendData('AI_STATUS', 'Situation Room: agents deliberating…');
-                const result = await answerUserQuery(userId, msg.payload.message, userStore.getSelectedProduct(userId));
-                if (result.error) {
-                    sendData('SITUATION_ROOM_RESPONSE', { error: result.error });
-                } else {
-                    sendData('SITUATION_ROOM_RESPONSE', { response: result.response });
-                }
+                const { answerUserQueryMultiAgent } = require('./services/aiEngine');
+                sendData('AI_STATUS', 'Situation Room: 5 agents deliberating…');
+                await answerUserQueryMultiAgent(
+                    userId,
+                    msg.payload.message,
+                    userStore.getSelectedProduct(userId),
+                    (agentId, name, role, color, text) => {
+                        sendData('SITUATION_ROOM_AGENT', { agentId, name, role, color, text });
+                    }
+                );
+                sendData('SITUATION_ROOM_DONE', {});
             }
 
             if (msg.type === 'SET_ENGINE_STATUS' && msg.payload?.engineStatus) {

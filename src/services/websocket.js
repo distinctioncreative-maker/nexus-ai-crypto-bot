@@ -112,10 +112,18 @@ export const initWebSocket = async () => {
                 store.setKillSwitchActive(!!message.payload?.reason, message.payload?.reason || '');
                 break;
 
-            case 'SITUATION_ROOM_RESPONSE':
-                if (ws._situationRoomCallback) {
-                    ws._situationRoomCallback(message.payload);
-                    ws._situationRoomCallback = null;
+            case 'SITUATION_ROOM_AGENT':
+                if (ws._situationRoomOnAgent) {
+                    const { agentId, name, role, color, text } = message.payload;
+                    ws._situationRoomOnAgent(agentId, name, role, color, text);
+                }
+                break;
+
+            case 'SITUATION_ROOM_DONE':
+                if (ws._situationRoomOnDone) {
+                    ws._situationRoomOnDone();
+                    ws._situationRoomOnDone = null;
+                    ws._situationRoomOnAgent = null;
                 }
                 break;
 
@@ -177,13 +185,14 @@ export const sendTradingModeChange = (mode) => {
     }
 };
 
-export const sendSituationRoomQuery = (message, onResponse) => {
+export const sendSituationRoomQuery = (message, onAgent, onDone) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
-        // Store callback so the message handler can call it
-        ws._situationRoomCallback = onResponse;
+        ws._situationRoomOnAgent = onAgent;
+        ws._situationRoomOnDone = onDone;
         ws.send(JSON.stringify({ type: 'SITUATION_ROOM_QUERY', payload: { message } }));
     } else {
-        onResponse({ error: 'WebSocket not connected. Wait for connection and try again.' });
+        onAgent('ERROR', 'System', 'Error', '#ff453a', 'WebSocket not connected. Try refreshing the page.');
+        onDone();
     }
 };
 
