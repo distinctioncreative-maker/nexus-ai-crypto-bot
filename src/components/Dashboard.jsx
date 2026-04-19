@@ -370,12 +370,12 @@ export default function Dashboard() {
                     </div>
 
                     <div style={{ overflowY: 'auto', paddingRight: '0.5rem', flexGrow: 1 }}>
-                        {trades.length === 0 && (
+                        {trades.filter(t => !t.product || t.product === selectedProduct).length === 0 && (
                             <div style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '2rem', fontSize: '0.85rem' }}>
                                 Awaiting AI signals on {selectedProduct}…
                             </div>
                         )}
-                        {trades.map(trade => (
+                        {trades.filter(t => !t.product || t.product === selectedProduct).map(trade => (
                             <motion.div
                                 initial={{ opacity: 0, x: -20 }}
                                 animate={{ opacity: 1, x: 0 }}
@@ -383,15 +383,15 @@ export default function Dashboard() {
                                 className="trade-item"
                             >
                                 <div className="trade-info">
-                                    <span className={`trade-type ${trade.type.toLowerCase()}`}>
+                                    <span className={`trade-type ${trade.type?.toLowerCase()}`}>
                                         {trade.type} • {trade.product || selectedProduct}
                                     </span>
-                                    <span className="trade-time">{new Date(trade.time).toLocaleTimeString()}</span>
+                                    <span className="trade-time">{trade.time ? new Date(trade.time).toLocaleTimeString() : '—'}</span>
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
                                     <div className="trade-amount">{trade.amount} {activeProduct.base}</div>
                                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                        @ ${trade.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                        @ ${trade.price != null ? trade.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
                                     </div>
                                 </div>
                             </motion.div>

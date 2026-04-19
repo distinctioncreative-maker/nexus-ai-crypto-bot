@@ -94,7 +94,7 @@ Respond with strict JSON. Action must be exactly 'BUY', 'SELL', or 'HOLD'.`;
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 systemInstruction: 'You are an elite quantitative trading JSON API assistant. Only output valid JSON.',
@@ -215,7 +215,7 @@ ${userMessage}`;
     const agentCalls = AGENT_PERSONAS.map(async (agent) => {
         try {
             const response = await ai.models.generateContent({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-2.5-flash',
                 contents: sharedContext,
                 config: {
                     systemInstruction: agent.personality,

@@ -32,6 +32,7 @@ function App() {
   } = useStore();
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [backendError, setBackendError] = useState('');
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
   const [showReconfigure, setShowReconfigure] = useState(false);
 
@@ -88,6 +89,10 @@ function App() {
       .catch(err => {
         console.error("Backend check failed:", err);
         setIsConfigured(false);
+        setBackendError(err.message === 'Failed to fetch'
+            ? 'Cannot reach backend server. Check your connection or Railway deployment.'
+            : `Backend error: ${err.message}`
+        );
       });
   }, [user, setIsConfigured, setEngineStatus, setIsLiveMode, setTradingMode]);
 
@@ -118,8 +123,14 @@ function App() {
   if (!isConfigured) {
     return (
       <div className="app-container">
+        {backendError && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, background: 'rgba(255,69,58,0.15)', border: '1px solid rgba(255,69,58,0.4)', padding: '0.6rem 1.25rem', fontSize: '0.8rem', color: '#ff453a', textAlign: 'center' }}>
+            ⚠️ {backendError}
+          </div>
+        )}
         <SetupWizard onComplete={() => {
           setIsConfigured(true);
+          setBackendError('');
           initWebSocket();
         }} />
         <DebugPanel />
@@ -144,7 +155,7 @@ function App() {
             <div className="mode-toggle-container" title="Halt execution engine — no orders will be placed">
               <button
                 className={`mode-pill ${engineStatus === 'STOPPED' ? 'stopped' : ''}`}
-                onClick={() => updateEngineStatus('STOPPED').catch(console.error)}
+                onClick={() => updateEngineStatus('STOPPED')}
                 style={{ border: 'none', cursor: 'pointer' }}
               >
                 <ShieldAlert size={16}/> STOPPED
@@ -154,7 +165,7 @@ function App() {
             <div className="mode-toggle-container" title="Run paper simulation — virtual trades only">
               <button
                 className={`mode-pill ${engineStatus === 'PAPER_RUNNING' ? 'paper' : ''}`}
-                onClick={() => updateEngineStatus('PAPER_RUNNING').catch(console.error)}
+                onClick={() => updateEngineStatus('PAPER_RUNNING')}
                 style={{ border: 'none', cursor: 'pointer' }}
               >
                 <Binary size={16}/> PAPER

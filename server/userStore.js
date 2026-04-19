@@ -15,7 +15,11 @@ function getSupabase() {
     return _supabase;
 }
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_SECRET || 'quant-distinction-creative-local-dev-key';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_SECRET || (
+    process.env.NODE_ENV === 'production'
+        ? (() => { console.error('❌ ENCRYPTION_SECRET env var is required in production. Set it in Railway secrets.'); process.exit(1); })()
+        : 'quant-distinction-creative-local-dev-key'
+);
 const ENGINE_STATUSES = ['STOPPED', 'PAPER_RUNNING', 'LIVE_RUNNING'];
 
 class UserStore {
@@ -326,7 +330,9 @@ class UserStore {
             body: `${amount.toFixed(6)} ${user.selectedProduct} @ $${price.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
         });
 
-        this.updateDailyStats(userId, 0);
+        // Track realized P&L: positive when selling (gain), negative when buying (cost)
+        const pnlDelta = type === 'SELL' ? cost : -cost;
+        this.updateDailyStats(userId, pnlDelta);
 
         return {
             ...trade,

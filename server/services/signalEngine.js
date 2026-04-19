@@ -29,8 +29,9 @@ async function fetchTVLChange() {
         const res = await axios.get('https://api.llama.fi/v2/historicalChainTvl', { timeout: 8000 });
         const history = res.data;
         if (!Array.isArray(history) || history.length < 8) return null;
-        const latest = history[history.length - 1].tvl;
-        const weekAgo = history[history.length - 8].tvl;
+        const latest = history[history.length - 1]?.tvl;
+        const weekAgo = history[history.length - 8]?.tvl;
+        if (!latest || !weekAgo || weekAgo === 0) return null;
         const changePct = ((latest - weekAgo) / weekAgo) * 100;
         return { latest, changePct: parseFloat(changePct.toFixed(2)) };
     } catch {
@@ -48,9 +49,16 @@ async function fetchPolymarketBTC() {
             (m.question.toLowerCase().includes('bull') || m.question.toLowerCase().includes('above') || m.question.toLowerCase().includes('price'))
         );
         if (!btcMarket) return null;
-        // outcomePrices is a JSON string like "[\"0.65\",\"0.35\"]" — first entry is YES probability
-        const prices = JSON.parse(btcMarket.outcomePrices || '["0.5","0.5"]');
-        return { question: btcMarket.question, bullProb: parseFloat(prices[0]) };
+        // outcomePrices may be a JSON string or already an array
+        let prices;
+        try {
+            prices = Array.isArray(btcMarket.outcomePrices)
+                ? btcMarket.outcomePrices
+                : JSON.parse(btcMarket.outcomePrices || '["0.5","0.5"]');
+        } catch {
+            prices = ['0.5', '0.5'];
+        }
+        return { question: btcMarket.question, bullProb: parseFloat(prices[0]) || 0.5 };
     } catch {
         return null;
     }

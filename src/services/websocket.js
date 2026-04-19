@@ -168,7 +168,10 @@ export const sendProductChange = (productId) => {
 export const sendConfirmTrade = (tradeId, accepted, amount) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'CONFIRM_TRADE', payload: { tradeId, accepted, amount } }));
-        useStore.getState().clearPendingTrade();
+        useStore.getState().clearPendingTrade(); // Only clear after successful WS send
+    } else {
+        // WS is down — don't clear pending trade so user can retry when reconnected
+        console.warn('sendConfirmTrade: WebSocket not connected, trade not sent');
     }
 };
 

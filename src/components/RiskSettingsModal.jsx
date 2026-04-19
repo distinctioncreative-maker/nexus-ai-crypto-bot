@@ -32,6 +32,7 @@ export default function RiskSettingsModal() {
     const [open, setOpen] = useState(false);
     const [local, setLocal] = useState({ ...riskSettings });
     const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
 
     const handleOpen = () => {
         setLocal({ ...riskSettings });
@@ -40,6 +41,7 @@ export default function RiskSettingsModal() {
 
     const handleSave = async () => {
         setSaving(true);
+        setSaveError('');
         try {
             const res = await authFetch(apiUrl('/api/risk-settings'), {
                 method: 'POST',
@@ -47,10 +49,11 @@ export default function RiskSettingsModal() {
                 body: JSON.stringify(local)
             });
             const data = await res.json();
+            if (data.error) { setSaveError(data.error); return; }
             if (data.riskSettings) setRiskSettings(data.riskSettings);
             setOpen(false);
         } catch (err) {
-            console.error('Failed to save risk settings:', err);
+            setSaveError(err.message || 'Failed to save. Check your connection.');
         } finally {
             setSaving(false);
         }
@@ -321,6 +324,12 @@ export default function RiskSettingsModal() {
                         <div style={{ background: 'rgba(255, 159, 10, 0.06)', border: '1px solid rgba(255, 159, 10, 0.2)', borderRadius: '8px', padding: '0.75rem', marginBottom: '1.5rem', fontSize: '0.75rem', color: 'rgba(255, 159, 10, 0.8)', lineHeight: 1.5 }}>
                             These settings apply to all future trades. Crypto is highly volatile — never risk money you cannot afford to lose.
                         </div>
+
+                        {saveError && (
+                            <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem', background: 'rgba(255,69,58,0.1)', border: '1px solid rgba(255,69,58,0.3)', borderRadius: '6px', fontSize: '0.75rem', color: 'var(--accent-red)' }}>
+                                {saveError}
+                            </div>
+                        )}
 
                         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                             <button

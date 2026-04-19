@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Shield, Key, CheckCircle } from 'lucide-react';
 import { authFetch } from '../lib/supabase';
 import { apiUrl, readApiResponse } from '../lib/api';
+import { useStore } from '../store/useStore';
 import './SetupWizard.css';
 
 export default function SetupWizard({ onComplete }) {
@@ -24,6 +25,8 @@ export default function SetupWizard({ onComplete }) {
             const data = await readApiResponse(response);
 
             if (data.success) {
+                // Store key in-memory for direct Gemini API calls (Situation Room)
+                useStore.getState().setGeminiKey(geminiKey);
                 onComplete();
             } else {
                 setError(data.error || 'Failed to authenticate');

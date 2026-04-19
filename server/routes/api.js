@@ -15,7 +15,7 @@ async function validateGeminiKey(apiKey) {
         const { GoogleGenAI } = require('@google/genai');
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
+            model: 'gemini-2.5-flash',
             contents: 'Reply with just the word: ok',
             config: { maxOutputTokens: 5 }
         });
@@ -264,6 +264,17 @@ router.post('/confirm-trade', authenticate, async (req, res) => {
     }
 
     const executed = userStore.executePaperTrade(req.userId, pending.side, finalAmount, pending.price, pending.reasoning);
+
+    if (executed) {
+        // Wire SmartTrade position tracking — same as the WS CONFIRM_TRADE path
+        const { openPosition, closePosition, defaultTpConfig } = require('../services/positionManager');
+        const u = userStore._ensureUser(req.userId);
+        if (pending.side === 'BUY') {
+            openPosition(req.userId, pending.product, finalAmount, pending.price, defaultTpConfig(u.riskSettings));
+        } else if (pending.side === 'SELL') {
+            closePosition(req.userId, pending.product);
+        }
+    }
 
     res.json({ success: true, executed: !!executed, trade: executed || null });
 });

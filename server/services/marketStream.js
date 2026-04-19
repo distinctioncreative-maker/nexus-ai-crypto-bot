@@ -226,7 +226,9 @@ function startUserStream(userId, broadcastFn, initialProduct) {
         if (engine.engineStatus !== 'STOPPED') {
             checkPositions(userId, activeProduct, data.price,
                 (amount, price, reason) => {
-                    if (engine.engineStatus === 'LIVE_RUNNING') {
+                    // Re-read engine state fresh — user may have toggled since interval started
+                    const currentEngine = userStore.getEngineState(userId);
+                    if (currentEngine.engineStatus === 'LIVE_RUNNING') {
                         // Queue as pending trade for live confirmation
                         const pendingTrade = buildPendingTrade('SELL', amount, price, activeProduct, reason, 100, null, true);
                         userStore.setPendingTrade(userId, pendingTrade);
@@ -315,7 +317,10 @@ function startUserStream(userId, broadcastFn, initialProduct) {
                 }
 
                 const suggestedAmount = getSuggestedTradeSize(userId, data.price);
-                const amountToTrade = decision.position_size_override || suggestedAmount;
+                // Clamp AI position size override to 2x suggested to prevent runaway orders
+                const amountToTrade = decision.position_size_override
+                    ? Math.min(decision.position_size_override, suggestedAmount * 2)
+                    : suggestedAmount;
 
                 const riskCheck = checkTradeAllowed(userId, decision.action, amountToTrade, data.price, data.history);
 
@@ -330,6 +335,14 @@ function startUserStream(userId, broadcastFn, initialProduct) {
                 } else {
                     const finalAmount = riskCheck.adjustedAmount || amountToTrade;
                     const currentUser = userStore._ensureUser(userId);
+
+                    // Don't overwrite a pending trade the user hasn't responded to yet
+                    const existingPending = userStore.getPendingTrade(userId);
+                    if (existingPending && Date.now() < existingPending.expiresAt) {
+                        broadcastFn('AI_STATUS', `${activeProduct}: ${decision.action} signal — awaiting your response to previous trade first`);
+                        broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
+                        return;
+                    }
 
                     if (currentUser.engineStatus === 'LIVE_RUNNING') {
                         const pendingTrade = buildPendingTrade(
