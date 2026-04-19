@@ -347,6 +347,16 @@ router.post('/reconfigure', authenticate, async (req, res) => {
     res.json({ success: true, message: 'Keys updated.' });
 });
 
+// Protected: return decrypted Gemini key for the authenticated user (used by browser-side Situation Room)
+router.get('/gemini-key', authenticate, async (req, res) => {
+    await hydrateUser(req.userId);
+    const keys = userStore.getKeys(req.userId);
+    if (!keys?.geminiApiKey) {
+        return res.status(404).json({ error: 'Gemini key not configured. Run setup first.' });
+    }
+    res.json({ geminiKey: keys.geminiApiKey });
+});
+
 // Protected: Situation Room — AI answers free-form user questions with live context
 router.post('/situation-room', authenticate, async (req, res) => {
     const { message, productId } = req.body;
