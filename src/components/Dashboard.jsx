@@ -18,6 +18,16 @@ const FALLBACK_PRODUCTS = [
     { id: 'MATIC-USD', base: 'MATIC', name: 'Polygon' },
     { id: 'LINK-USD', base: 'LINK', name: 'Chainlink' },
     { id: 'LTC-USD', base: 'LTC', name: 'Litecoin' },
+    { id: 'AMP-USD', base: 'AMP', name: 'Amp' },
+    { id: 'LRC-USD', base: 'LRC', name: 'Loopring' },
+    { id: 'ALGO-USD', base: 'ALGO', name: 'Algorand' },
+    { id: 'XYO-USD', base: 'XYO', name: 'XYO Network' },
+    { id: 'ANKR-USD', base: 'ANKR', name: 'Ankr' },
+    { id: 'FLOKI-USD', base: 'FLOKI', name: 'Floki' },
+    { id: 'SHIB-USD', base: 'SHIB', name: 'Shiba Inu' },
+    { id: 'PEPE-USD', base: 'PEPE', name: 'Pepe' },
+    { id: 'ARB-USD', base: 'ARB', name: 'Arbitrum' },
+    { id: 'OP-USD', base: 'OP', name: 'Optimism' },
 ];
 
 export default function Dashboard() {
@@ -126,15 +136,15 @@ export default function Dashboard() {
         };
     }, [isLiveMode, selectedProduct, priceColor]); // Recreate on mode or product change
 
-    // Stream new ticks into the chart
+    // Seed / update chart whenever market history changes.
+    // setData() replaces the full series so the chart populates immediately on mount
+    // and after product switches — not just one-point-at-a-time.
     useEffect(() => {
         if (lineSeriesRef.current && marketHistory.length > 0) {
             try {
-                const latestPoint = marketHistory[marketHistory.length - 1];
-                lineSeriesRef.current.update(latestPoint);
-            } catch (error) {
-                void error;
-                // Time ordering issues are expected; ignore silently
+                lineSeriesRef.current.setData(marketHistory);
+            } catch {
+                // Ignore lightweight-charts ordering errors silently
             }
         }
     }, [marketHistory]);

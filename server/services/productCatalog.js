@@ -3,7 +3,9 @@ const axios = require('axios');
 const FALLBACK_PRODUCTS = [
     'BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD',
     'ADA-USD', 'AVAX-USD', 'MATIC-USD', 'LINK-USD', 'DOT-USD',
-    'LTC-USD', 'UNI-USD', 'ATOM-USD', 'NEAR-USD', 'FIL-USD'
+    'LTC-USD', 'UNI-USD', 'ATOM-USD', 'NEAR-USD', 'FIL-USD',
+    'AMP-USD', 'LRC-USD', 'ALGO-USD', 'ANKR-USD', 'FLOKI-USD',
+    'XYO-USD', 'SHIB-USD', 'PEPE-USD', 'ARB-USD', 'OP-USD',
 ].map(id => ({ id, base: id.split('-')[0], quote: 'USD', name: id.split('-')[0] }));
 
 let productsCache = null;

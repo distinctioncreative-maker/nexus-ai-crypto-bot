@@ -288,6 +288,12 @@ function startUserStream(userId, broadcastFn, initialProduct) {
 
         if (!hasGeminiKey) {
             broadcastFn('AI_STATUS', '⚠️ No Gemini key — go to Setup to enable AI trading');
+        } else if (engine.engineStatus === 'STOPPED') {
+            // Don't run AI evaluations when engine is stopped — saves Gemini tokens
+            // Only broadcast status occasionally (every 10s) to avoid flooding client
+            if (now % 10000 < 2200) {
+                broadcastFn('AI_STATUS', `Engine paused — click PAPER to start trading ${activeProduct}`);
+            }
         } else if (data.history.length < 20) {
             broadcastFn('AI_STATUS', `Collecting market data (${data.history.length}/20 ticks)…`);
         } else if (now - lastAiEvalTime > 30000) {
@@ -397,7 +403,7 @@ function startUserStream(userId, broadcastFn, initialProduct) {
             }
 
             broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
-            broadcastFn('AI_STATUS', `Monitoring ${activeProduct} positions…`);
+            // Keep the last AI decision visible — don't overwrite with a generic "Monitoring" message
         }
     }, 2000);
 
