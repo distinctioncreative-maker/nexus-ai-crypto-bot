@@ -347,7 +347,7 @@ function startUserStream(userId, broadcastFn, initialProduct) {
         const now = Date.now();
 
         if (engine.engineStatus === 'STOPPED') {
-            // Don't run AI evaluations when engine is stopped — saves Gemini tokens
+            // Don't run AI evaluations when engine is stopped
             // Only broadcast status occasionally (every 10s) to avoid flooding client
             if (now % 10000 < 2200) {
                 broadcastFn('AI_STATUS', `Engine paused — click PAPER to start trading ${activeProduct}`);
@@ -361,7 +361,7 @@ function startUserStream(userId, broadcastFn, initialProduct) {
             const decision = await evaluateMarketSignal(userId, [...data.history], activeProduct);
 
             if (!decision) {
-                broadcastFn('AI_STATUS', `⚠️ AI eval failed for ${activeProduct} — check Gemini key`);
+                broadcastFn('AI_STATUS', `⚠️ AI eval failed for ${activeProduct} — check server logs`);
                 broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
                 return;
             }

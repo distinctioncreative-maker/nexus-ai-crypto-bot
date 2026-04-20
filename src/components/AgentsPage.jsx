@@ -354,7 +354,7 @@ export default function AgentsPage() {
         <p className="page-subtitle">
           {strategies.length > 0
             ? `${strategies.length} agents competing in parallel shadow portfolios. Leaders get promoted every 20 closed trades. Losers mutate and evolve.`
-            : 'Agents initialize after the first AI evaluation. Start the engine with your API keys configured.'}
+            : 'Agents initialize after the first AI evaluation. Set the engine to PAPER or LIVE to start.'}
         </p>
       </div>
 
@@ -396,7 +396,7 @@ export default function AgentsPage() {
             Strategy agents initialize after the AI engine runs its first analysis.
           </div>
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', opacity: 0.6 }}>
-            Make sure you have a Gemini API key configured and the engine is set to PAPER or LIVE.
+            Make sure the engine is set to PAPER or LIVE to begin strategy evaluation.
           </div>
         </div>
       )}

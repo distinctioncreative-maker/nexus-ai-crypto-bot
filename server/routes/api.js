@@ -123,7 +123,7 @@ router.post('/setup', authenticate, async (req, res) => {
         }
     }
 
-    userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null, null);
+    userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null);
     const provider = process.env.GROQ_API_KEY ? 'Groq' : 'Ollama';
     console.log(`🔒 Setup complete for user ${req.userId} — AI provider: ${provider}`);
     saveUserSettings(supabase, req.userId, userStore._ensureUser(req.userId)).catch(error => console.warn('setup persistence failed:', error.message));
@@ -339,7 +339,7 @@ router.post('/reconfigure', authenticate, async (req, res) => {
         }
     }
 
-    userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null, null);
+    userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null);
     saveUserSettings(supabase, req.userId, userStore._ensureUser(req.userId)).catch(error => console.warn('reconfigure persistence failed:', error.message));
     res.json({ success: true, message: 'Keys updated.' });
 });

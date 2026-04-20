@@ -34,7 +34,6 @@ class UserStore {
                 keys: {
                     coinbaseApiKey: null,
                     coinbaseApiSecret: null,
-                    geminiApiKey: null
                 },
                 selectedProduct: 'BTC-USD',
                 tradingMode: 'FULL_AUTO',
@@ -89,11 +88,10 @@ class UserStore {
         return this.users.get(userId);
     }
 
-    setKeys(userId, coinbaseKey, coinbaseSecret, geminiKey) {
+    setKeys(userId, coinbaseKey, coinbaseSecret) {
         const user = this._ensureUser(userId);
         user.keys.coinbaseApiKey = coinbaseKey;
         user.keys.coinbaseApiSecret = coinbaseSecret;
-        user.keys.geminiApiKey = geminiKey;
     }
 
     hasKeys(userId) {
@@ -382,7 +380,6 @@ class UserStore {
         if (loaded.keys) {
             if (loaded.keys.coinbaseApiKey) user.keys.coinbaseApiKey = loaded.keys.coinbaseApiKey;
             if (loaded.keys.coinbaseApiSecret) user.keys.coinbaseApiSecret = loaded.keys.coinbaseApiSecret;
-            if (loaded.keys.geminiApiKey) user.keys.geminiApiKey = loaded.keys.geminiApiKey;
         }
 
         // Trading state
