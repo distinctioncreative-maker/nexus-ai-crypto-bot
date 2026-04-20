@@ -97,9 +97,15 @@ class UserStore {
     }
 
     hasKeys(userId) {
+        // Ollama is always available locally — just check the user has completed setup
+        const user = this.users.get(userId);
+        return !!user;
+    }
+
+    hasCoinbaseKeys(userId) {
         const user = this.users.get(userId);
         if (!user) return false;
-        return !!(user.keys.coinbaseApiKey && user.keys.coinbaseApiSecret && user.keys.geminiApiKey);
+        return !!(user.keys.coinbaseApiKey && user.keys.coinbaseApiSecret);
     }
 
     getKeys(userId) {

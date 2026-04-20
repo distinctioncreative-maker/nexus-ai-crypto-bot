@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader, User, KeyRound } from 'lucide-react';
+import { Send, Loader, User } from 'lucide-react';
 import { useStore } from '../store/useStore';
+
+const OLLAMA_URL = 'http://localhost:11434';
+const OLLAMA_MODEL = 'qwen2.5:14b';
 
 const AGENTS = [
     {
@@ -40,8 +43,6 @@ const AGENTS = [
     },
 ];
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-
 const STARTER_PROMPTS = [
     "What does the market structure look like right now?",
     "Should we be buying, selling, or holding here?",
@@ -52,6 +53,28 @@ const STARTER_PROMPTS = [
 ];
 
 let msgIdCounter = 0;
+
+async function callOllama(systemPrompt, userContent) {
+    const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            model: OLLAMA_MODEL,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userContent }
+            ],
+            stream: false,
+            options: { temperature: 0.75, num_predict: 220 }
+        })
+    });
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Ollama ${res.status}: ${err.slice(0, 120)}`);
+    }
+    const data = await res.json();
+    return data?.message?.content || '(no response)';
+}
 
 function AgentBubble({ agent, text, thinking }) {
     const stanceMatch = text?.match(/\[Stance:\s*(LONG|FLAT|WATCH)\]/i);
@@ -123,19 +146,22 @@ function Divider({ label }) {
 }
 
 export default function SituationRoom() {
-    const { selectedProduct, currentPrice, wsConnected, geminiKey } = useStore();
+    const { selectedProduct, currentPrice, wsConnected } = useStore();
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const [ollamaOk, setOllamaOk] = useState(true);
     const bottomRef = useRef(null);
     const inputRef = useRef(null);
 
     useEffect(() => {
         setMessages([{
             id: ++msgIdCounter, type: 'agent', agentIdx: 4, // Orion
-            text: `Situation Room is live. We're monitoring ${selectedProduct || 'BTC-USD'} with all 5 agents active. Ask us anything — market structure, strategy thesis, risk assessment. Each agent will respond independently.`,
+            text: `Situation Room is live. We're monitoring ${selectedProduct || 'BTC-USD'} with all 5 agents active. Powered by local Ollama (${OLLAMA_MODEL}). Ask us anything — market structure, strategy thesis, risk assessment.`,
             thinking: false,
         }]);
+        // Quick connectivity check
+        fetch(`${OLLAMA_URL}/api/tags`).catch(() => setOllamaOk(false));
     }, []);
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -145,16 +171,6 @@ export default function SituationRoom() {
         if (!message || loading) return;
         setInput('');
         setLoading(true);
-
-        if (!geminiKey) {
-            setMessages(prev => [...prev,
-                { id: ++msgIdCounter, type: 'user', text: message },
-                { id: ++msgIdCounter, type: 'divider', label: 'Error' },
-                { id: ++msgIdCounter, type: 'agent', agentIdx: 4, text: '⚠️ No Gemini key — use the key icon in the nav to configure your API key first.', thinking: false },
-            ]);
-            setLoading(false);
-            return;
-        }
 
         const marketContext = `Market context: ${selectedProduct || 'BTC-USD'}${currentPrice > 0 ? ` at $${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}.`;
         const userContent = `${marketContext}\n\nUser question: ${message}`;
@@ -168,28 +184,38 @@ export default function SituationRoom() {
             ...AGENTS.map((agent, i) => ({ id: agentMsgIds[i], type: 'agent', agentIdx: i, text: '', thinking: true })),
         ]);
 
-        // Fire all 5 agent calls in parallel — each updates its bubble as it resolves
-        const calls = AGENTS.map(async (agent, i) => {
+        // First 4 agents run in parallel, Orion waits for them
+        const subAgents = AGENTS.slice(0, 4);
+        const orion = AGENTS[4];
+        const subResponses = {};
+
+        const subCalls = subAgents.map(async (agent, i) => {
             try {
-                const res = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        system_instruction: { parts: [{ text: agent.systemPrompt }] },
-                        contents: [{ role: 'user', parts: [{ text: userContent }] }],
-                        generationConfig: { maxOutputTokens: 220, temperature: 0.75 }
-                    })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data?.error?.message || `Gemini ${res.status}`);
-                const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '(no response)';
+                const responseText = await callOllama(agent.systemPrompt, userContent);
+                subResponses[agent.id] = responseText;
                 setMessages(prev => prev.map(m => m.id === agentMsgIds[i] ? { ...m, text: responseText, thinking: false } : m));
             } catch (err) {
-                setMessages(prev => prev.map(m => m.id === agentMsgIds[i] ? { ...m, text: `⚠️ ${err.message}`, thinking: false } : m));
+                const errText = `⚠️ ${err.message.includes('fetch') ? 'Ollama not reachable — run: ollama serve' : err.message}`;
+                subResponses[agent.id] = errText;
+                setMessages(prev => prev.map(m => m.id === agentMsgIds[i] ? { ...m, text: errText, thinking: false } : m));
+                setOllamaOk(false);
             }
         });
 
-        await Promise.allSettled(calls);
+        await Promise.allSettled(subCalls);
+
+        // Orion synthesizes the debate
+        const debateContext = subAgents.map(a => `${a.id}: ${subResponses[a.id] || '(no response)'}`).join('\n\n');
+        const orionPrompt = `${userContent}\n\n=== AGENT DEBATE ===\n${debateContext}\n\nSynthesize the above. Provide your final direction.`;
+
+        try {
+            const orionText = await callOllama(orion.systemPrompt, orionPrompt);
+            setMessages(prev => prev.map(m => m.id === agentMsgIds[4] ? { ...m, text: orionText, thinking: false } : m));
+        } catch (err) {
+            const errText = `⚠️ ${err.message}`;
+            setMessages(prev => prev.map(m => m.id === agentMsgIds[4] ? { ...m, text: errText, thinking: false } : m));
+        }
+
         setLoading(false);
         inputRef.current?.focus();
     };
@@ -204,15 +230,15 @@ export default function SituationRoom() {
             <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 }}>
                 <div style={{ width: 9, height: 9, borderRadius: '50%', background: wsConnected ? 'var(--accent-green)' : 'var(--accent-orange)', boxShadow: `0 0 7px ${wsConnected ? 'var(--accent-green)' : 'var(--accent-orange)'}` }} />
                 <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Situation Room</span>
-                {!geminiKey && (
-                    <span style={{ fontSize: '0.65rem', color: 'var(--accent-orange)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <KeyRound size={11} /> Configure Gemini key to activate
+                {!ollamaOk && (
+                    <span style={{ fontSize: '0.65rem', color: 'var(--accent-orange)' }}>
+                        ⚠️ Ollama offline — run: <code>ollama serve</code>
                     </span>
                 )}
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.35rem' }}>
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
                     {AGENTS.map((a, i) => <span key={i} style={{ fontSize: '0.85rem', opacity: 0.7 }}>{a.emoji}</span>)}
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginLeft: '0.3rem', alignSelf: 'center' }}>
-                        5 agents · {selectedProduct}
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginLeft: '0.3rem' }}>
+                        5 agents · {selectedProduct} · {OLLAMA_MODEL}
                     </span>
                 </div>
             </div>
@@ -246,15 +272,15 @@ export default function SituationRoom() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKey}
-                    placeholder={geminiKey ? "Ask the team anything… (Enter to send)" : "Configure Gemini key first (key icon in nav)"}
+                    placeholder="Ask the team anything… (Enter to send)"
                     rows={2}
-                    disabled={loading || !geminiKey}
+                    disabled={loading}
                     style={{ flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-primary)', borderRadius: '10px', padding: '0.55rem 0.8rem', color: 'var(--text-primary)', fontSize: '0.875rem', resize: 'none', fontFamily: 'inherit', lineHeight: 1.5, outline: 'none' }}
                 />
                 <button
                     onClick={() => send()}
-                    disabled={!input.trim() || loading || !geminiKey}
-                    style={{ width: 38, height: 38, borderRadius: '10px', border: 'none', background: input.trim() && !loading && geminiKey ? 'var(--accent-blue)' : 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: input.trim() && !loading && geminiKey ? 'pointer' : 'default', flexShrink: 0, marginBottom: '1px' }}
+                    disabled={!input.trim() || loading}
+                    style={{ width: 38, height: 38, borderRadius: '10px', border: 'none', background: input.trim() && !loading ? 'var(--accent-blue)' : 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: input.trim() && !loading ? 'pointer' : 'default', flexShrink: 0, marginBottom: '1px' }}
                 >
                     {loading ? <Loader size={15} color="var(--text-secondary)" /> : <Send size={15} color="white" />}
                 </button>

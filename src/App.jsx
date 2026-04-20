@@ -29,7 +29,6 @@ function App() {
   const {
     isConfigured, setIsConfigured, isLiveMode, setIsLiveMode,
     engineStatus, setEngineStatus, tutorialsActive, toggleTutorials, tradingMode, setTradingMode,
-    setGeminiKey
   } = useStore();
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -85,11 +84,6 @@ function App() {
         if (data.tradingMode) setTradingMode(data.tradingMode);
         if (data.isConfigured) {
           initWebSocket();
-          // Fetch Gemini key so Situation Room works immediately (even after page refresh)
-          authFetch(apiUrl('/api/gemini-key'))
-            .then(r => r.json())
-            .then(d => { if (d.geminiKey) setGeminiKey(d.geminiKey); })
-            .catch(() => {}); // Non-fatal — user can still use setup wizard to set it
         }
       })
       .catch(err => {

@@ -2,10 +2,6 @@ import { create } from 'zustand';
 
 // Global state using Zustand for ultra-fast re-rendering during WebSocket ticks
 export const useStore = create((set) => ({
-    // Gemini key stored in-memory for direct browser API calls (Situation Room)
-    geminiKey: '',
-    setGeminiKey: (k) => set({ geminiKey: k }),
-
     // Auth & Modes
     isConfigured: false,
     setIsConfigured: (status) => set({ isConfigured: status }),

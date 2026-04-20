@@ -345,11 +345,8 @@ function startUserStream(userId, broadcastFn, initialProduct) {
         }
 
         const now = Date.now();
-        const hasGeminiKey = !!userStore.getKeys(userId)?.geminiApiKey;
 
-        if (!hasGeminiKey) {
-            broadcastFn('AI_STATUS', '⚠️ No Gemini key — go to Setup to enable AI trading');
-        } else if (engine.engineStatus === 'STOPPED') {
+        if (engine.engineStatus === 'STOPPED') {
             // Don't run AI evaluations when engine is stopped — saves Gemini tokens
             // Only broadcast status occasionally (every 10s) to avoid flooding client
             if (now % 10000 < 2200) {

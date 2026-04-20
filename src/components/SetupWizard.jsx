@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import { Shield, Key, CheckCircle } from 'lucide-react';
+import { Shield, Key, Cpu } from 'lucide-react';
 import { authFetch } from '../lib/supabase';
 import { apiUrl, readApiResponse } from '../lib/api';
-import { useStore } from '../store/useStore';
 import './SetupWizard.css';
 
 export default function SetupWizard({ onComplete }) {
     const [coinbaseKey, setCoinbaseKey] = useState('');
     const [coinbaseSecret, setCoinbaseSecret] = useState('');
-    const [geminiKey, setGeminiKey] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -20,16 +18,14 @@ export default function SetupWizard({ onComplete }) {
         try {
             const response = await authFetch(apiUrl('/api/setup'), {
                 method: 'POST',
-                body: JSON.stringify({ coinbaseKey, coinbaseSecret, geminiKey })
+                body: JSON.stringify({ coinbaseKey, coinbaseSecret })
             });
             const data = await readApiResponse(response);
 
             if (data.success) {
-                // Store key in-memory for direct Gemini API calls (Situation Room)
-                useStore.getState().setGeminiKey(geminiKey);
                 onComplete();
             } else {
-                setError(data.error || 'Failed to authenticate');
+                setError(data.error || 'Failed to connect');
             }
         } catch (err) {
             setError(err.message === 'Failed to fetch'
@@ -46,26 +42,19 @@ export default function SetupWizard({ onComplete }) {
             <div className="wizard-header">
                 <Shield size={32} color="var(--accent-green)" />
                 <h2>Secure Node Connection</h2>
-                <p className="subtitle">Your keys are encrypted server-side and only used by the backend trading engine.</p>
+                <p className="subtitle">AI is powered by your local Ollama instance — no API keys required for trading intelligence.</p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.65rem 1rem', borderRadius: '10px', background: 'rgba(48,209,88,0.08)', border: '1px solid rgba(48,209,88,0.2)', marginBottom: '1.25rem' }}>
+                <Cpu size={15} color="var(--accent-green)" />
+                <span style={{ fontSize: '0.78rem', color: 'var(--accent-green)' }}>
+                    Ollama · Local AI · Free &amp; Private
+                </span>
             </div>
 
             <form onSubmit={handleConnect} className="wizard-form">
                 <div className="input-group">
-                    <label>Gemini API Key <span style={{color:'var(--accent-green)',fontSize:'0.7rem'}}>REQUIRED — powers all AI</span></label>
-                    <div className="input-with-icon">
-                        <Key size={16} />
-                        <input
-                            type="password"
-                            value={geminiKey}
-                            onChange={(e) => setGeminiKey(e.target.value)}
-                            placeholder="AIzaSy..."
-                            required
-                        />
-                    </div>
-                </div>
-
-                <div className="input-group">
-                    <label>Coinbase API Key <span style={{color:'var(--text-secondary)',fontSize:'0.7rem'}}>optional — for live trading</span></label>
+                    <label>Coinbase API Key <span style={{color:'var(--text-secondary)',fontSize:'0.7rem'}}>optional — for live trading only</span></label>
                     <div className="input-with-icon">
                         <Key size={16} />
                         <input
@@ -78,7 +67,7 @@ export default function SetupWizard({ onComplete }) {
                 </div>
 
                 <div className="input-group">
-                    <label>Coinbase API Secret <span style={{color:'var(--text-secondary)',fontSize:'0.7rem'}}>optional — for live trading</span></label>
+                    <label>Coinbase API Secret <span style={{color:'var(--text-secondary)',fontSize:'0.7rem'}}>optional — for live trading only</span></label>
                     <div className="input-with-icon">
                         <Key size={16} />
                         <input
@@ -93,8 +82,12 @@ export default function SetupWizard({ onComplete }) {
                 {error && <div className="error-box">{error}</div>}
 
                 <button type="submit" className="connect-btn pulse" disabled={loading}>
-                    {loading ? 'Securing Engine...' : 'Initialize AI Core'}
+                    {loading ? 'Connecting to Ollama…' : 'Initialize AI Core'}
                 </button>
+
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textAlign: 'center', marginTop: '0.5rem' }}>
+                    Make sure Ollama is running locally: <code style={{ color: 'var(--accent-green)' }}>ollama serve</code>
+                </p>
             </form>
         </div>
     );

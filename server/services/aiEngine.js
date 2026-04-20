@@ -1,13 +1,32 @@
 const userStore = require('../userStore');
-const { GoogleGenAI, Type } = require('@google/genai');
+const axios = require('axios');
 const { getSignals } = require('./signalEngine');
 const { getWinningStrategy, getStrategyConsensus } = require('./strategyEngine');
 
-async function evaluateMarketSignal(userId, pricePoints, productId) {
-    const keys = userStore.getKeys(userId);
-    if (!keys?.geminiApiKey) return null;
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:14b';
 
-    const ai = new GoogleGenAI({ apiKey: keys.geminiApiKey });
+/**
+ * Call Ollama chat API.
+ * Returns the response text, or throws on error.
+ */
+async function ollamaChat(systemPrompt, userContent, jsonMode = false, maxTokens = 500) {
+    const body = {
+        model: OLLAMA_MODEL,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent }
+        ],
+        stream: false,
+        options: { temperature: 0.7, num_predict: maxTokens }
+    };
+    if (jsonMode) body.format = 'json';
+
+    const res = await axios.post(`${OLLAMA_URL}/api/chat`, body, { timeout: 90000 });
+    return res.data?.message?.content || '';
+}
+
+async function evaluateMarketSignal(userId, pricePoints, productId) {
     const state = userStore.getPaperState(userId);
     const product = productId || state.selectedProduct || 'BTC-USD';
     const [baseAsset] = product.split('-');
@@ -59,7 +78,9 @@ Full Debate: ${consensus.debate}`;
         ? `\n=== RECENT NEWS (top 3 headlines) ===\n${topHeadlines}\n`
         : '';
 
-    const prompt = `You are the Quant AI trading engine. You manage a paper trading portfolio.
+    const systemInstruction = 'You are an elite quantitative trading JSON API. Only output valid JSON with exactly these fields: action (string: BUY, SELL, or HOLD), reasoning (string), confidence (integer 0-100), lesson_learned (string), position_size_override (number or null).';
+
+    const prompt = `You are the Quant AI trading engine managing a paper trading portfolio.
 
 === PORTFOLIO STATE ===
 Balance: $${state.balance.toFixed(2)}
@@ -88,32 +109,11 @@ Circuit breaker: ${state.circuitBreaker?.tripped ? 'TRIPPED — ' + state.circui
 ${memoryContext || `First analysis for ${product}. Focus on momentum and mean-reversion rules.`}
 
 Given ALL signals above, what is your decision for ${baseAsset}?
-Respond with strict JSON. Action must be exactly 'BUY', 'SELL', or 'HOLD'.`;
-
-    const responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-            action: { type: Type.STRING },
-            reasoning: { type: Type.STRING },
-            confidence: { type: Type.INTEGER },
-            lesson_learned: { type: Type.STRING },
-            position_size_override: { type: Type.NUMBER }
-        },
-        required: ['action', 'reasoning', 'confidence', 'lesson_learned']
-    };
+Action must be exactly 'BUY', 'SELL', or 'HOLD'. Respond with JSON only.`;
 
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                systemInstruction: 'You are an elite quantitative trading JSON API assistant. Only output valid JSON.',
-                responseMimeType: 'application/json',
-                responseSchema
-            }
-        });
-
-        const decision = JSON.parse(response.text);
+        const raw = await ollamaChat(systemInstruction, prompt, true, 500);
+        const decision = JSON.parse(raw);
         const modelAction = ['BUY', 'SELL', 'HOLD'].includes(decision.action) ? decision.action : 'HOLD';
         const agentAction = consensus.consensus || 'HOLD';
         const finalAction = agentAction !== 'HOLD' ? agentAction : modelAction;
@@ -184,18 +184,11 @@ const AGENT_PERSONAS = [
 ];
 
 /**
- * Situation Room: 5 agents each give individual responses in parallel.
- * Calls onAgentResponse(agentId, name, role, color, text) as each finishes.
- * Returns a promise that resolves when all 5 are done.
+ * Situation Room: 5 agents each give individual responses.
+ * Round 1: 4 sub-agents run in parallel.
+ * Round 2: Orion synthesizes all 4 and gives final verdict.
  */
 async function answerUserQueryMultiAgent(userId, userMessage, productId, onAgentResponse) {
-    const keys = userStore.getKeys(userId);
-    if (!keys?.geminiApiKey) {
-        onAgentResponse('ERROR', 'System', 'Error', '#ff453a', 'No Gemini key configured. Go to Setup and enter your API key.');
-        return;
-    }
-
-    const ai = new GoogleGenAI({ apiKey: keys.geminiApiKey });
     const state = userStore.getPaperState(userId);
     const product = productId || state.selectedProduct || 'BTC-USD';
     const [baseAsset] = product.split('-');
@@ -228,16 +221,9 @@ ${userMessage}`;
     // Round 1: Sub-agents run in parallel
     const agentCalls = subAgents.map(async (agent) => {
         try {
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: sharedContext,
-                config: {
-                    systemInstruction: agent.personality,
-                    maxOutputTokens: 200
-                }
-            });
-            subAgentResponses[agent.name] = response.text;
-            onAgentResponse(agent.id, agent.name, agent.role, agent.color, response.text);
+            const text = await ollamaChat(agent.personality, sharedContext, false, 200);
+            subAgentResponses[agent.name] = text;
+            onAgentResponse(agent.id, agent.name, agent.role, agent.color, text);
         } catch (err) {
             subAgentResponses[agent.name] = `[offline: ${err.message}]`;
             onAgentResponse(agent.id, agent.name, agent.role, agent.color, subAgentResponses[agent.name]);
@@ -259,15 +245,8 @@ ${debateContext}
 Synthesize the above arguments. Agree or disagree, and provide final direction.`;
 
     try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: orionContext,
-            config: {
-                systemInstruction: orionAgent.personality,
-                maxOutputTokens: 250
-            }
-        });
-        onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, response.text);
+        const text = await ollamaChat(orionAgent.personality, orionContext, false, 250);
+        onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, text);
     } catch (err) {
         onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, `[offline: ${err.message}]`);
     }

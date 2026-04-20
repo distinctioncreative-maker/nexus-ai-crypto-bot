@@ -7,28 +7,22 @@ const { loadUserState, saveUserSettings } = require('../db/persistence');
 const { getCoinbaseProducts, isSupportedProduct } = require('../services/productCatalog');
 
 /**
- * Validate a Gemini API key by making a minimal test call.
+ * Validate Ollama is reachable and has at least one model installed.
  * Returns { valid: bool, error: string|null }
  */
-async function validateGeminiKey(apiKey) {
+async function validateOllamaConnection() {
     try {
-        const { GoogleGenAI } = require('@google/genai');
-        const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: 'Reply with just the word: ok',
-            config: { maxOutputTokens: 5 }
-        });
-        return { valid: !!response.text, error: null };
+        const axios = require('axios');
+        const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+        const res = await axios.get(`${ollamaUrl}/api/tags`, { timeout: 5000 });
+        const models = res.data?.models || [];
+        if (models.length === 0) {
+            return { valid: false, error: 'Ollama is running but has no models installed. Run: ollama pull qwen2.5:14b' };
+        }
+        return { valid: true, error: null, models: models.map(m => m.name) };
     } catch (err) {
-        const msg = err.message || '';
-        if (msg.includes('API_KEY_INVALID') || msg.includes('401') || msg.includes('403')) {
-            return { valid: false, error: 'Gemini API key is invalid. Check your Google AI Studio key.' };
-        }
-        if (msg.includes('quota') || msg.includes('429')) {
-            return { valid: false, error: 'Gemini API quota exceeded. Check your Google AI billing.' };
-        }
-        return { valid: false, error: `Gemini API error: ${msg}` };
+        const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+        return { valid: false, error: `Cannot reach Ollama at ${ollamaUrl}. Make sure Ollama is running: ollama serve` };
     }
 }
 
@@ -96,6 +90,8 @@ router.get('/debug', (req, res) => {
             FRONTEND_URL: process.env.FRONTEND_URL || '(not set)',
             PORT: process.env.PORT || '3001',
             NODE_ENV: process.env.NODE_ENV || 'development',
+            OLLAMA_URL: process.env.OLLAMA_URL || 'http://localhost:11434 (default)',
+            OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'qwen2.5:14b (default)',
         },
         routes
     });
@@ -109,16 +105,12 @@ router.get('/status', authenticate, async (req, res) => {
 
 // Protected: securely ingest keys into per-user memory
 router.post('/setup', authenticate, async (req, res) => {
-    const { coinbaseKey, coinbaseSecret, geminiKey } = req.body;
+    const { coinbaseKey, coinbaseSecret } = req.body;
 
-    if (!geminiKey) {
-        return res.status(400).json({ error: 'Gemini API key is required.' });
-    }
-
-    // Validate Gemini key before storing
-    const geminiResult = await validateGeminiKey(geminiKey);
-    if (!geminiResult.valid) {
-        return res.status(400).json({ error: geminiResult.error });
+    // Validate Ollama is reachable before completing setup
+    const ollamaResult = await validateOllamaConnection();
+    if (!ollamaResult.valid) {
+        return res.status(400).json({ error: ollamaResult.error });
     }
 
     // Validate Coinbase keys only if provided
@@ -129,11 +121,11 @@ router.post('/setup', authenticate, async (req, res) => {
         }
     }
 
-    userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null, geminiKey);
-    console.log(`🔒 Keys validated and loaded for user ${req.userId}`);
+    userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null, null);
+    console.log(`🔒 Setup complete for user ${req.userId} — Ollama model: ${ollamaResult.models?.[0] || 'unknown'}`);
     // Persist encrypted keys immediately so they survive server restart
     saveUserSettings(supabase, req.userId, userStore._ensureUser(req.userId)).catch(error => console.warn('setup persistence failed:', error.message));
-    res.json({ success: true, message: 'Keys validated and loaded. Start paper trading when ready.' });
+    res.json({ success: true, message: 'Ollama connected. Start paper trading when ready.', models: ollamaResult.models });
 });
 
 // Protected: fetch this user's portfolio
@@ -329,15 +321,11 @@ router.get('/products/:productId/validate', authenticate, async (req, res) => {
 
 // Protected: reconfigure keys (same as setup but clears existing first)
 router.post('/reconfigure', authenticate, async (req, res) => {
-    const { coinbaseKey, coinbaseSecret, geminiKey } = req.body;
+    const { coinbaseKey, coinbaseSecret } = req.body;
 
-    if (!geminiKey) {
-        return res.status(400).json({ error: 'Gemini API key is required.' });
-    }
-
-    const geminiResult = await validateGeminiKey(geminiKey);
-    if (!geminiResult.valid) {
-        return res.status(400).json({ error: geminiResult.error });
+    const ollamaResult = await validateOllamaConnection();
+    if (!ollamaResult.valid) {
+        return res.status(400).json({ error: ollamaResult.error });
     }
 
     if (coinbaseKey && coinbaseSecret) {
@@ -347,19 +335,15 @@ router.post('/reconfigure', authenticate, async (req, res) => {
         }
     }
 
-    userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null, geminiKey);
+    userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null, null);
     saveUserSettings(supabase, req.userId, userStore._ensureUser(req.userId)).catch(error => console.warn('reconfigure persistence failed:', error.message));
     res.json({ success: true, message: 'Keys updated.' });
 });
 
-// Protected: return decrypted Gemini key for the authenticated user (used by browser-side Situation Room)
-router.get('/gemini-key', authenticate, async (req, res) => {
-    await hydrateUser(req.userId);
-    const keys = userStore.getKeys(req.userId);
-    if (!keys?.geminiApiKey) {
-        return res.status(404).json({ error: 'Gemini key not configured. Run setup first.' });
-    }
-    res.json({ geminiKey: keys.geminiApiKey });
+// Protected: return Ollama connection status and available models
+router.get('/ollama-status', authenticate, async (req, res) => {
+    const result = await validateOllamaConnection();
+    res.json(result);
 });
 
 // Protected: Situation Room — AI agents answer free-form user questions with live context
