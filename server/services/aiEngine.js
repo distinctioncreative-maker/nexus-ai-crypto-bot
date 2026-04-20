@@ -12,7 +12,10 @@ async function evaluateMarketSignal(userId, pricePoints, productId) {
     const product = productId || state.selectedProduct || 'BTC-USD';
     const [baseAsset] = product.split('-');
 
-    const signals = await getSignals().catch(() => null);
+    const [signals, newsItems] = await Promise.all([
+        getSignals().catch(() => null),
+        require('./signalEngine').getNews().catch(() => [])
+    ]);
     const winningStrategy = getWinningStrategy(userId);
     const consensus = getStrategyConsensus(userId, pricePoints, signals, product);
     const currentPrice = pricePoints[pricePoints.length - 1];
@@ -49,6 +52,13 @@ Dissent Level: ${dissentPct}% — ${consensus.dissent > 0.3 ? 'SPLIT VOTE: agent
 Leading Agent: ${consensus.topStrategy}
 Full Debate: ${consensus.debate}`;
 
+    const topHeadlines = Array.isArray(newsItems) ? newsItems.slice(0, 3)
+        .map((n, i) => `${i + 1}. [${n.source || 'News'}] ${n.headline} (${n.sentiment || 'neutral'})`)
+        .join('\n') : '';
+    const newsContext = topHeadlines
+        ? `\n=== RECENT NEWS (top 3 headlines) ===\n${topHeadlines}\n`
+        : '';
+
     const prompt = `You are the Quant AI trading engine. You manage a paper trading portfolio.
 
 === PORTFOLIO STATE ===
@@ -68,7 +78,7 @@ Polymarket BTC Bull Probability: ${polyStr}
 Composite Signal Score: ${compositeStr}
 
 ${consensusContext}
-
+${newsContext}
 === RISK CONTEXT ===
 Daily P&L today: $${dailyPnl.toFixed(2)}
 Daily loss limit remaining: ${dailyLimitRemaining.toFixed(2)}%

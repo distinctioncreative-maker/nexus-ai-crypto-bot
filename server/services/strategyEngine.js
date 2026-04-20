@@ -401,10 +401,6 @@ function getStrategyConsensus(userId, prices, signals, productId = userStore.get
     };
 }
 
-function recordStrategyTrade(userId) {
-    ensureStrategies(userId);
-}
-
 async function snapshotStrategies(userId, strategies) {
     const supabase = getSupabase();
     if (!supabase) return;
@@ -422,6 +418,5 @@ module.exports = {
     ensureStrategies,
     evaluateAllStrategies,
     getWinningStrategy,
-    recordStrategyTrade,
     getStrategyConsensus
 };

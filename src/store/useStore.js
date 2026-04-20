@@ -37,6 +37,7 @@ export const useStore = create((set) => ({
         return { marketHistory: newHistory };
     }),
     clearMarketHistory: () => set({ marketHistory: [], currentPrice: 0 }),
+    setMarketHistory: (points) => set({ marketHistory: points }),
 
     // Portfolio State
     balance: 0,

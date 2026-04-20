@@ -63,6 +63,12 @@ export const initWebSocket = async () => {
                 }
                 break;
 
+            case 'CANDLE_HISTORY':
+                if (Array.isArray(message.payload) && message.payload.length > 0) {
+                    store.setMarketHistory(message.payload);
+                }
+                break;
+
             case 'HOLDINGS_PRICES':
                 if (message.payload && typeof message.payload === 'object') {
                     store.updateProductPrices(message.payload);

@@ -112,6 +112,30 @@ wss.on('connection', async (ws, req) => {
     const state = userStore.getPaperState(userId);
     sendPortfolioState();
 
+    // Send strategy state so AgentsPage populates immediately (not blank until first trade)
+    sendData('STRATEGY_UPDATE', userStore.getStrategies(userId));
+
+    // Seed chart with historical candles so it's not blank while waiting for live ticks
+    (async () => {
+        try {
+            const axios = require('axios');
+            const product = state.selectedProduct || 'BTC-USD';
+            const res = await axios.get(
+                `https://api.exchange.coinbase.com/products/${product}/candles`,
+                { params: { granularity: 60 }, timeout: 5000 }
+            );
+            const candles = Array.isArray(res.data) ? res.data : [];
+            // Coinbase returns newest-first; reverse for chronological order
+            const points = candles.reverse().slice(-100).map(c => ({
+                time: c[0],   // unix seconds
+                value: c[4]   // close price
+            }));
+            if (points.length > 0) sendData('CANDLE_HISTORY', points);
+        } catch (err) {
+            console.warn('Candle seed failed:', err.message);
+        }
+    })();
+
     // Start per-user market stream + AI
     const { cleanup, setProduct } = startUserStream(userId, sendData, state.selectedProduct);
 
