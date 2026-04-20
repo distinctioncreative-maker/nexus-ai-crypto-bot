@@ -90,8 +90,8 @@ router.get('/debug', (req, res) => {
             FRONTEND_URL: process.env.FRONTEND_URL || '(not set)',
             PORT: process.env.PORT || '3001',
             NODE_ENV: process.env.NODE_ENV || 'development',
-            OLLAMA_URL: process.env.OLLAMA_URL || 'http://localhost:11434 (default)',
-            OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'qwen2.5:14b (default)',
+            GROQ_API_KEY: process.env.GROQ_API_KEY ? '✓ set' : '✗ missing (using Ollama fallback)',
+            GROQ_MODEL: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile (default)',
         },
         routes
     });
@@ -107,10 +107,12 @@ router.get('/status', authenticate, async (req, res) => {
 router.post('/setup', authenticate, async (req, res) => {
     const { coinbaseKey, coinbaseSecret } = req.body;
 
-    // Validate Ollama is reachable before completing setup
-    const ollamaResult = await validateOllamaConnection();
-    if (!ollamaResult.valid) {
-        return res.status(400).json({ error: ollamaResult.error });
+    // Validate AI provider is reachable (Groq takes priority over Ollama)
+    if (!process.env.GROQ_API_KEY) {
+        const ollamaResult = await validateOllamaConnection();
+        if (!ollamaResult.valid) {
+            return res.status(400).json({ error: ollamaResult.error });
+        }
     }
 
     // Validate Coinbase keys only if provided
@@ -122,10 +124,10 @@ router.post('/setup', authenticate, async (req, res) => {
     }
 
     userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null, null);
-    console.log(`🔒 Setup complete for user ${req.userId} — Ollama model: ${ollamaResult.models?.[0] || 'unknown'}`);
-    // Persist encrypted keys immediately so they survive server restart
+    const provider = process.env.GROQ_API_KEY ? 'Groq' : 'Ollama';
+    console.log(`🔒 Setup complete for user ${req.userId} — AI provider: ${provider}`);
     saveUserSettings(supabase, req.userId, userStore._ensureUser(req.userId)).catch(error => console.warn('setup persistence failed:', error.message));
-    res.json({ success: true, message: 'Ollama connected. Start paper trading when ready.', models: ollamaResult.models });
+    res.json({ success: true, message: `${provider} AI connected. Start paper trading when ready.` });
 });
 
 // Protected: fetch this user's portfolio
@@ -323,9 +325,11 @@ router.get('/products/:productId/validate', authenticate, async (req, res) => {
 router.post('/reconfigure', authenticate, async (req, res) => {
     const { coinbaseKey, coinbaseSecret } = req.body;
 
-    const ollamaResult = await validateOllamaConnection();
-    if (!ollamaResult.valid) {
-        return res.status(400).json({ error: ollamaResult.error });
+    if (!process.env.GROQ_API_KEY) {
+        const ollamaResult = await validateOllamaConnection();
+        if (!ollamaResult.valid) {
+            return res.status(400).json({ error: ollamaResult.error });
+        }
     }
 
     if (coinbaseKey && coinbaseSecret) {
@@ -340,10 +344,13 @@ router.post('/reconfigure', authenticate, async (req, res) => {
     res.json({ success: true, message: 'Keys updated.' });
 });
 
-// Protected: return Ollama connection status and available models
-router.get('/ollama-status', authenticate, async (req, res) => {
+// Protected: return AI provider status
+router.get('/ai-status', authenticate, async (req, res) => {
+    if (process.env.GROQ_API_KEY) {
+        return res.json({ provider: 'groq', model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile', valid: true });
+    }
     const result = await validateOllamaConnection();
-    res.json(result);
+    res.json({ provider: 'ollama', ...result });
 });
 
 // Protected: Situation Room — AI agents answer free-form user questions with live context

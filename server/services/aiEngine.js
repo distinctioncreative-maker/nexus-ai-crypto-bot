@@ -3,14 +3,36 @@ const axios = require('axios');
 const { getSignals } = require('./signalEngine');
 const { getWinningStrategy, getStrategyConsensus } = require('./strategyEngine');
 
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:14b';
 
 /**
- * Call Ollama chat API.
+ * Call AI: uses Groq if GROQ_API_KEY is set, otherwise falls back to local Ollama.
  * Returns the response text, or throws on error.
  */
-async function ollamaChat(systemPrompt, userContent, jsonMode = false, maxTokens = 500) {
+async function aiChat(systemPrompt, userContent, jsonMode = false, maxTokens = 500) {
+    if (GROQ_API_KEY) {
+        const body = {
+            model: GROQ_MODEL,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userContent }
+            ],
+            max_tokens: maxTokens,
+            temperature: 0.7,
+        };
+        if (jsonMode) body.response_format = { type: 'json_object' };
+
+        const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', body, {
+            headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+            timeout: 60000
+        });
+        return res.data?.choices?.[0]?.message?.content || '';
+    }
+
+    // Fallback: local Ollama
     const body = {
         model: OLLAMA_MODEL,
         messages: [
@@ -112,7 +134,7 @@ Given ALL signals above, what is your decision for ${baseAsset}?
 Action must be exactly 'BUY', 'SELL', or 'HOLD'. Respond with JSON only.`;
 
     try {
-        const raw = await ollamaChat(systemInstruction, prompt, true, 500);
+        const raw = await aiChat(systemInstruction, prompt, true, 500);
         const decision = JSON.parse(raw);
         const modelAction = ['BUY', 'SELL', 'HOLD'].includes(decision.action) ? decision.action : 'HOLD';
         const agentAction = consensus.consensus || 'HOLD';
@@ -221,7 +243,7 @@ ${userMessage}`;
     // Round 1: Sub-agents run in parallel
     const agentCalls = subAgents.map(async (agent) => {
         try {
-            const text = await ollamaChat(agent.personality, sharedContext, false, 200);
+            const text = await aiChat(agent.personality, sharedContext, false, 200);
             subAgentResponses[agent.name] = text;
             onAgentResponse(agent.id, agent.name, agent.role, agent.color, text);
         } catch (err) {
@@ -245,7 +267,7 @@ ${debateContext}
 Synthesize the above arguments. Agree or disagree, and provide final direction.`;
 
     try {
-        const text = await ollamaChat(orionAgent.personality, orionContext, false, 250);
+        const text = await aiChat(orionAgent.personality, orionContext, false, 250);
         onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, text);
     } catch (err) {
         onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, `[offline: ${err.message}]`);
