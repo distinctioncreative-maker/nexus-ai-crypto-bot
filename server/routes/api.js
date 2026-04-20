@@ -80,6 +80,13 @@ router.get('/health', (req, res) => {
 
 // Public: debug info — lists loaded env vars (keys masked) and route count
 router.get('/debug', (req, res) => {
+    let routes = [];
+    try {
+        routes = (router.stack || [])
+            .filter(r => r.route && r.route.path && r.route.methods)
+            .map(r => `${Object.keys(r.route.methods).join(',').toUpperCase()} /api${r.route.path}`);
+    } catch (_) { routes = ['(route introspection unavailable)']; }
+
     res.json({
         status: 'router_loaded',
         timestamp: new Date().toISOString(),
@@ -90,9 +97,7 @@ router.get('/debug', (req, res) => {
             PORT: process.env.PORT || '3001',
             NODE_ENV: process.env.NODE_ENV || 'development',
         },
-        routes: router.stack
-            .filter(r => r.route)
-            .map(r => `${Object.keys(r.route.methods).join(',').toUpperCase()} /api${r.route.path}`)
+        routes
     });
 });
 

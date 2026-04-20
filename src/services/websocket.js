@@ -55,7 +55,7 @@ export const initWebSocket = async () => {
                 } else if (typeof message.payload.isLiveMode === 'boolean') {
                     store.setIsLiveMode(message.payload.isLiveMode);
                 }
-                if (message.payload.selectedProduct) {
+                if (message.payload.selectedProduct && message.payload.selectedProduct !== store.selectedProduct) {
                     store.setSelectedProduct(message.payload.selectedProduct);
                 }
                 if (message.payload.productHoldings) {
