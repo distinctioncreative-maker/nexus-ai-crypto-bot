@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Cpu, Radio, KeyRound } from 'lucide-react';
+import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Cpu, Radio, KeyRound, Menu, X } from 'lucide-react';
 import { useStore } from './store/useStore';
 import { initWebSocket, closeWebSocket, sendTradingModeChange, sendEngineStatusChange } from './services/websocket';
 import { supabase, authFetch } from './lib/supabase';
@@ -145,6 +145,8 @@ function App() {
   }
 
   // Gate 3: Fully authenticated + configured → show Trading Terminal
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <BrowserRouter>
       <div className={`app-container ${isLiveMode ? 'live-mode' : 'paper-mode'}`}>
@@ -156,8 +158,12 @@ function App() {
               <span className="version-tag">{user.email}</span>
             </div>
           </div>
+          
+          <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
 
-          <div className="system-controls">
+          <div className={`system-controls ${mobileMenuOpen ? 'open' : ''}`}>
             <div className="mode-toggle-container" title="Halt execution engine — no orders will be placed">
               <button
                 className={`mode-pill ${engineStatus === 'STOPPED' ? 'stopped' : ''}`}
@@ -232,7 +238,7 @@ function App() {
           </div>
         </nav>
 
-        <div className="app-layout">
+        <div className="app-layout" onClick={() => setMobileMenuOpen(false)}>
           <nav className="app-navigation">
             <NavLink to="/" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} end>
               <LayoutDashboard size={22}/> <span className="nav-label">Terminal</span>

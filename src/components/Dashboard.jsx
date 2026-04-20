@@ -62,6 +62,7 @@ export default function Dashboard() {
     const chartContainerRef = useRef();
     const lineSeriesRef = useRef(null);
     const chartRef = useRef(null);
+    const tooltipRef = useRef(null);
 
     const priceColor = isLiveMode ? 'rgba(255, 69, 58, 1)' : 'rgba(10, 132, 255, 1)';
     const bgColor = 'transparent';
@@ -126,6 +127,37 @@ export default function Dashboard() {
         };
         window.addEventListener('resize', handleResize);
 
+        // Crosshair tooltip listener
+        chart.subscribeCrosshairMove(param => {
+            if (!tooltipRef.current || !chartContainerRef.current) return;
+            if (
+                param.point === undefined ||
+                !param.time ||
+                param.point.x < 0 ||
+                param.point.x > chartContainerRef.current.clientWidth ||
+                param.point.y < 0 ||
+                param.point.y > chartContainerRef.current.clientHeight
+            ) {
+                tooltipRef.current.style.display = 'none';
+                return;
+            }
+
+            const areaData = param.seriesData.get(lineSeries);
+            if (!areaData) return;
+            const price = areaData.value;
+            const coordinate = lineSeries.priceToCoordinate(price);
+            
+            tooltipRef.current.style.display = 'block';
+            tooltipRef.current.style.left = param.point.x + 'px';
+            tooltipRef.current.style.top = coordinate + 'px';
+            
+            const dateStr = new Date(param.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            tooltipRef.current.innerHTML = `
+                <div style="font-weight:600;font-size:0.9rem;margin-bottom:2px">$${price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                <div style="color:var(--text-secondary);font-size:0.75rem">${dateStr}</div>
+            `;
+        });
+
         return () => {
             window.removeEventListener('resize', handleResize);
             if (chartRef.current) {
@@ -143,11 +175,28 @@ export default function Dashboard() {
         if (lineSeriesRef.current && marketHistory.length > 0) {
             try {
                 lineSeriesRef.current.setData(marketHistory);
+
+                // Add trade markers to chart
+                const productTrades = trades.filter(t => t.product === selectedProduct);
+                const markers = productTrades.map(trade => {
+                    // Try to align trade exactly to a chart timestamp, or just use the trade time if close
+                    const tradeTimeSecs = Math.floor(new Date(trade.timestamp).getTime() / 1000);
+                    const isBuy = trade.type === 'BUY';
+                    return {
+                        time: tradeTimeSecs,
+                        position: isBuy ? 'belowBar' : 'aboveBar',
+                        color: isBuy ? '#34C759' : '#ff453a',
+                        shape: isBuy ? 'arrowUp' : 'arrowDown',
+                        text: `${isBuy ? 'BUY' : 'SELL'} @ $${trade.price.toLocaleString()}`
+                    };
+                }).sort((a, b) => a.time - b.time);
+
+                lineSeriesRef.current.setMarkers(markers);
             } catch {
                 // Ignore lightweight-charts ordering errors silently
             }
         }
-    }, [marketHistory]);
+    }, [marketHistory, trades, selectedProduct]);
 
     const handleProductChange = (productId) => {
         sendProductChange(productId);
@@ -369,8 +418,38 @@ export default function Dashboard() {
                                 </div>
                             )}
                         </div>
-                    </div>
 
+                {/* Chart Area */}
+                <motion.div className="glass-panel" variants={itemVariants} style={{ padding: '1rem', position: 'relative' }}>
+                    <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        marginBottom: '1rem', fontFamily: 'var(--font-mono)'
+                    }}>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{activeProduct.base} LIVE CHART</span>
+                        <span style={{ fontSize: '0.85rem', color: currentPrice > 0 ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
+                            ● {currentPrice > 0 ? 'STREAMING' : 'WAITING FOR DATA'}
+                        </span>
+                    </div>
+                    {/* Tooltip Overlay */}
+                    <div
+                        ref={tooltipRef}
+                        style={{
+                            position: 'absolute',
+                            display: 'none',
+                            padding: '8px',
+                            boxSizing: 'border-box',
+                            fontSize: '12px',
+                            background: 'rgba(20, 20, 20, 0.95)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '6px',
+                            pointerEvents: 'none',
+                            zIndex: 10,
+                            transform: 'translate(-50%, -120%)',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                            minWidth: '80px',
+                            textAlign: 'center'
+                        }}
+                    />
                     <div ref={chartContainerRef} style={{ width: '100%', height: '380px' }} />
                 </motion.div>
 

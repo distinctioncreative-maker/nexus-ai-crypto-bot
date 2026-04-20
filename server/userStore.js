@@ -39,7 +39,7 @@ class UserStore {
                 selectedProduct: 'BTC-USD',
                 tradingMode: 'FULL_AUTO',
                 isLiveMode: false,
-                engineStatus: 'STOPPED',
+                engineStatus: 'PAPER_RUNNING',
                 riskSettings: {
                     maxTradePercent: 2,
                     dailyLossLimitPercent: 5,

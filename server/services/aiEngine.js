@@ -221,8 +221,12 @@ Learned Rules: ${learningContext || 'None yet'}
 === USER MESSAGE ===
 ${userMessage}`;
 
-    // Run all 5 agents in parallel, call onAgentResponse as each resolves
-    const agentCalls = AGENT_PERSONAS.map(async (agent) => {
+    const subAgents = AGENT_PERSONAS.filter(a => a.id !== 'COMBINED');
+    const orionAgent = AGENT_PERSONAS.find(a => a.id === 'COMBINED');
+    const subAgentResponses = {};
+
+    // Round 1: Sub-agents run in parallel
+    const agentCalls = subAgents.map(async (agent) => {
         try {
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -232,13 +236,41 @@ ${userMessage}`;
                     maxOutputTokens: 200
                 }
             });
+            subAgentResponses[agent.name] = response.text;
             onAgentResponse(agent.id, agent.name, agent.role, agent.color, response.text);
         } catch (err) {
-            onAgentResponse(agent.id, agent.name, agent.role, agent.color, `[offline: ${err.message}]`);
+            subAgentResponses[agent.name] = `[offline: ${err.message}]`;
+            onAgentResponse(agent.id, agent.name, agent.role, agent.color, subAgentResponses[agent.name]);
         }
     });
 
     await Promise.allSettled(agentCalls);
+
+    // Round 2: Orion synthesizes
+    const debateContext = Object.entries(subAgentResponses)
+        .map(([name, text]) => `${name}: ${text}`)
+        .join('\n\n');
+
+    const orionContext = `${sharedContext}
+
+=== AGENT DEBATE (Round 1) ===
+${debateContext}
+
+Synthesize the above arguments. Agree or disagree, and provide final direction.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: orionContext,
+            config: {
+                systemInstruction: orionAgent.personality,
+                maxOutputTokens: 250
+            }
+        });
+        onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, response.text);
+    } catch (err) {
+        onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, `[offline: ${err.message}]`);
+    }
 }
 
 module.exports = { evaluateMarketSignal, answerUserQueryMultiAgent };

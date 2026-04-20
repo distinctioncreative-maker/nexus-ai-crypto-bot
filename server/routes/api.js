@@ -357,18 +357,27 @@ router.get('/gemini-key', authenticate, async (req, res) => {
     res.json({ geminiKey: keys.geminiApiKey });
 });
 
-// Protected: Situation Room — AI answers free-form user questions with live context
+// Protected: Situation Room — AI agents answer free-form user questions with live context
 router.post('/situation-room', authenticate, async (req, res) => {
     const { message, productId } = req.body;
     if (!message || !message.trim()) {
         return res.status(400).json({ error: 'Message is required.' });
     }
-    const { answerUserQuery } = require('../services/aiEngine');
-    const result = await answerUserQuery(req.userId, message.trim(), productId);
-    if (result.error) {
-        return res.status(500).json({ error: result.error });
+    const { answerUserQueryMultiAgent } = require('../services/aiEngine');
+    const responses = [];
+    try {
+        await answerUserQueryMultiAgent(
+            req.userId,
+            message.trim(),
+            productId,
+            (agentId, name, role, color, text) => {
+                responses.push({ agentId, name, role, color, text });
+            }
+        );
+        res.json({ agents: responses });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
-    res.json(result);
 });
 
 module.exports = router;

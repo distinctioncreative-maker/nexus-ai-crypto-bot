@@ -302,6 +302,14 @@
     100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0); }
 }
 
+.mobile-menu-btn {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    padding: 0.5rem;
+    cursor: pointer;
+}
 
 /* ---------------------------------------------------- */
 /* MOBILE OVERHAUL: SAFARI & iOS OPTIMIZATIONS          */
@@ -313,9 +321,50 @@
   }
 }
 
-@media (max-width: 768px) {
-    /* Collapse Header */
+@media (max-width: 900px) {
     .navbar {
+        height: auto;
+        min-height: 70px;
+        flex-wrap: wrap;
+        z-index: 100;
+    }
+
+    .mobile-menu-btn {
+        display: block;
+    }
+
+    .system-controls {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 1rem 0;
+        gap: 0.75rem;
+        background: var(--bg-color-secondary);
+        border-top: 1px solid var(--card-border);
+        margin-top: 0.5rem;
+    }
+
+    .system-controls.open {
+        display: flex;
+    }
+
+    .secure-badge {
+        justify-content: center;
+        padding: 0.5rem;
+    }
+
+    /* Mobile specific adjustments for dropdown items */
+    .mode-toggle-container {
+        display: flex;
+        justify-content: center;
+    }
+
+    .tutorial-btn {
+        margin: 0 auto;
+    }
+
+    .app-layout {
         padding: 1rem;
         padding-top: max(1rem, env(safe-area-inset-top));
     }

@@ -1,11 +1,13 @@
 const WebSocket = require('ws');
+const axios = require('axios');
 const { evaluateMarketSignal } = require('./aiEngine');
 const userStore = require('../userStore');
 const { checkTradeAllowed, getSuggestedTradeSize } = require('./riskEngine');
 const { FALLBACK_PRODUCTS, isSupportedProduct } = require('./productCatalog');
 const { openPosition, checkPositions, closePosition, defaultTpConfig } = require('./positionManager');
 
-const MARKET_WS_URL = process.env.MARKET_WS_URL || 'wss://advanced-trade-ws.coinbase.com';
+// Public Coinbase Exchange WebSocket — no auth required for ticker data
+const MARKET_WS_URL = process.env.MARKET_WS_URL || 'wss://ws-feed.exchange.coinbase.com';
 
 const SUPPORTED_PRODUCTS = FALLBACK_PRODUCTS.map(product => product.id);
 module.exports.SUPPORTED_PRODUCTS = SUPPORTED_PRODUCTS;
@@ -22,7 +24,25 @@ function getProductData(productId) {
     return productData.get(productId);
 }
 
+/**
+ * Handle ticker messages from the public Coinbase Exchange WS.
+ * Public feed format: { type: 'ticker', product_id, price, ... }
+ */
 function handleTickerMessage(message) {
+    // Public Exchange WS format: flat object with product_id + price
+    if (message.type === 'ticker' && message.product_id) {
+        const price = Number.parseFloat(message.price);
+        const productId = message.product_id;
+        if (!productId || !Number.isFinite(price) || price <= 0) return;
+
+        const data = getProductData(productId);
+        data.price = price;
+        data.history.push(price);
+        if (data.history.length > 200) data.history.shift();
+        return;
+    }
+
+    // Fallback: Advanced Trade WS nested format (if user overrides MARKET_WS_URL)
     const events = Array.isArray(message.events) ? message.events : [];
     for (const event of events) {
         const tickers = Array.isArray(event.tickers) ? event.tickers : [];
@@ -34,25 +54,21 @@ function handleTickerMessage(message) {
             const data = getProductData(productId);
             data.price = price;
             data.history.push(price);
-            if (data.history.length > 100) data.history.shift();
+            if (data.history.length > 200) data.history.shift();
         }
     }
 }
 
 function subscribeToAllProducts() {
     if (!marketWs || marketWs.readyState !== WebSocket.OPEN) return;
+    // Public Exchange WS uses 'subscribe' with 'channels' array
     marketWs.send(JSON.stringify({
         type: 'subscribe',
         product_ids: SUPPORTED_PRODUCTS,
-        channel: 'ticker'
-    }));
-    marketWs.send(JSON.stringify({
-        type: 'subscribe',
-        product_ids: SUPPORTED_PRODUCTS,
-        channel: 'heartbeats'
+        channels: ['ticker', 'heartbeat']
     }));
     isSubscribed = true;
-    console.log(`📡 Subscribed to ${SUPPORTED_PRODUCTS.length} Coinbase products`);
+    console.log(`📡 Subscribed to ${SUPPORTED_PRODUCTS.length} products via public Coinbase feed`);
 }
 
 function broadcastEngineState(userId, broadcastFn) {
@@ -65,16 +81,16 @@ function ensureMarketConnection() {
         return;
     }
 
-    console.log('📡 Connecting to Coinbase Advanced Trade stream...');
+    console.log('📡 Connecting to public Coinbase Exchange stream...');
     isSubscribed = false;
     marketWs = new WebSocket(MARKET_WS_URL);
 
     marketWs.on('open', subscribeToAllProducts);
 
-    marketWs.on('message', (data) => {
+    marketWs.on('message', (raw) => {
         try {
-            const message = JSON.parse(data);
-            if (message.channel === 'ticker') {
+            const message = JSON.parse(raw);
+            if (message.type === 'ticker' || message.channel === 'ticker') {
                 handleTickerMessage(message);
             }
         } catch (error) {
@@ -89,6 +105,32 @@ function ensureMarketConnection() {
         console.log('Market WS closed. Reconnecting in 5s...');
         setTimeout(ensureMarketConnection, 5000);
     });
+}
+
+/**
+ * Fetch 300 historical 1-minute candles from the public Coinbase Exchange REST API.
+ * Returns array of { time, value } suitable for lightweight-charts.
+ */
+async function fetchHistoricalCandles(productId) {
+    try {
+        // Public endpoint — no auth required
+        const end = new Date();
+        const start = new Date(end.getTime() - 300 * 60 * 1000); // 300 minutes ago
+        const url = `https://api.exchange.coinbase.com/products/${productId}/candles?granularity=60&start=${start.toISOString()}&end=${end.toISOString()}`;
+        const res = await axios.get(url, { timeout: 8000 });
+        if (!Array.isArray(res.data) || res.data.length === 0) return [];
+
+        // Coinbase returns [timestamp, low, high, open, close, volume] newest-first
+        const candles = res.data
+            .map(c => ({ time: c[0], value: c[4] })) // close price
+            .filter(c => Number.isFinite(c.time) && Number.isFinite(c.value) && c.value > 0)
+            .sort((a, b) => a.time - b.time);
+
+        return candles;
+    } catch (err) {
+        console.warn(`Historical candles fetch failed for ${productId}:`, err.message);
+        return [];
+    }
 }
 
 /**
@@ -182,11 +224,24 @@ function startUserStream(userId, broadcastFn, initialProduct) {
             marketWs.send(JSON.stringify({
                 type: 'subscribe',
                 product_ids: [productId],
-                channel: 'ticker'
+                channels: ['ticker']
             }));
             // Register it for future reconnects
             SUPPORTED_PRODUCTS.push(productId);
         }
+        // Send historical candles for the new product
+        fetchHistoricalCandles(productId).then(candles => {
+            if (candles.length > 0) {
+                broadcastFn('CANDLE_HISTORY', candles);
+                // Seed the price history for AI evaluation with the last 100 close prices
+                const data = getProductData(productId);
+                if (data.history.length < 20) {
+                    const closes = candles.slice(-100).map(c => c.value);
+                    data.history = closes;
+                    data.price = closes[closes.length - 1];
+                }
+            }
+        }).catch(() => {});
         return true;
     };
 
@@ -267,7 +322,10 @@ function startUserStream(userId, broadcastFn, initialProduct) {
                     broadcastFn('PENDING_TRADE', pendingTrade);
                 } else {
                     const executed = userStore.executePaperTrade(userId, 'SELL', stateCheck.assetHoldings, data.price, reason);
-                    if (executed) broadcastFn('TRADE_EXEC', executed);
+                    if (executed) {
+                        broadcastFn('TRADE_EXEC', executed);
+                        broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
+                    }
                 }
             } else if (rsCheck.takeProfitPrice && data.price >= rsCheck.takeProfitPrice) {
                 broadcastFn('AI_STATUS', `🟢 TAKE-PROFIT triggered at $${data.price.toLocaleString()} (target: $${rsCheck.takeProfitPrice.toLocaleString()})`);
@@ -278,7 +336,10 @@ function startUserStream(userId, broadcastFn, initialProduct) {
                     broadcastFn('PENDING_TRADE', pendingTrade);
                 } else {
                     const executed = userStore.executePaperTrade(userId, 'SELL', stateCheck.assetHoldings, data.price, reason);
-                    if (executed) broadcastFn('TRADE_EXEC', executed);
+                    if (executed) {
+                        broadcastFn('TRADE_EXEC', executed);
+                        broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
+                    }
                 }
             }
         }
@@ -315,7 +376,8 @@ function startUserStream(userId, broadcastFn, initialProduct) {
                 userStore._ensureUser(userId).activeStrategyId = decision.topStrategyId;
             }
 
-            if (decision && decision.action !== 'HOLD' && decision.confidence >= 52) {
+            const minConfidence = engine.engineStatus === 'LIVE_RUNNING' ? 80 : 65;
+            if (decision && decision.action !== 'HOLD' && decision.confidence >= minConfidence) {
                 if (engine.engineStatus === 'STOPPED') {
                     broadcastFn('AI_STATUS', `${activeProduct}: ${decision.action} signal observed; execution engine is stopped.`);
                     broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
