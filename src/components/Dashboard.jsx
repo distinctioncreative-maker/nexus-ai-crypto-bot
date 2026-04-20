@@ -281,7 +281,7 @@ export default function Dashboard() {
                             border: '1px solid rgba(255,255,255,0.08)',
                             borderRadius: '10px', fontSize: '0.78rem'
                         }}>
-                            <div style={{ color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Fear & Greed</div>
+                            <div style={{ color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>Fear &amp; Greed</div>
                             <div style={{
                                 color: signals.fearGreed.value < 30 ? 'var(--accent-green)' : signals.fearGreed.value > 70 ? 'var(--accent-red)' : 'var(--accent-blue)',
                                 fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.95rem'
@@ -418,6 +418,7 @@ export default function Dashboard() {
                                 </div>
                             )}
                         </div>
+                    </div>
 
                 {/* Chart Area */}
                 <motion.div className="glass-panel" variants={itemVariants} style={{ padding: '1rem', position: 'relative' }}>
@@ -487,6 +488,7 @@ export default function Dashboard() {
                         ))}
                     </div>
                 </motion.div>
+            </motion.div>
             </div>
         </motion.div>
     );
