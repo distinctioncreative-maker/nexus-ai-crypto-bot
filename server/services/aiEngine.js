@@ -1,7 +1,6 @@
 const userStore = require('../userStore');
 const axios = require('axios');
 const { getSignals } = require('./signalEngine');
-const { getWinningStrategy, getStrategyConsensus } = require('./strategyEngine');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
@@ -48,7 +47,7 @@ async function aiChat(systemPrompt, userContent, jsonMode = false, maxTokens = 5
     return res.data?.message?.content || '';
 }
 
-async function evaluateMarketSignal(userId, pricePoints, productId) {
+async function evaluateMarketSignal(userId, candles, productId) {
     const state = userStore.getPaperState(userId);
     const product = productId || state.selectedProduct || 'BTC-USD';
     const [baseAsset] = product.split('-');
@@ -57,9 +56,9 @@ async function evaluateMarketSignal(userId, pricePoints, productId) {
         getSignals().catch(() => null),
         require('./signalEngine').getNews().catch(() => [])
     ]);
-    const winningStrategy = getWinningStrategy(userId);
-    const consensus = getStrategyConsensus(userId, pricePoints, signals, product);
-    const currentPrice = pricePoints[pricePoints.length - 1];
+
+    // candles is an array of {time, value/close, open, high, low, volume}
+    const currentPrice = candles.length > 0 ? candles[candles.length - 1].value : 0;
 
     const totalValue = state.balance + (state.assetHoldings * currentPrice);
     const drawdownPct = ((state.initialBalance - totalValue) / state.initialBalance) * 100;
@@ -83,16 +82,6 @@ async function evaluateMarketSignal(userId, pricePoints, productId) {
         ? `${signals.compositeScore > 0 ? '+' : ''}${signals.compositeScore}`
         : 'Unavailable';
 
-    const winnerDesc = winningStrategy
-        ? `${winningStrategy.name} (Win Rate: ${winningStrategy.wins + winningStrategy.losses > 0 ? ((winningStrategy.wins / (winningStrategy.wins + winningStrategy.losses)) * 100).toFixed(0) : 0}%, Sharpe: ${winningStrategy.sharpe.toFixed(2)})`
-        : 'No active strategy yet (generation 1 — building track record)';
-    const dissentPct = Math.round(consensus.dissent * 100);
-    const consensusContext = `=== AGENT DEBATE (${consensus.totalAgents} strategy agents voted) ===
-Consensus Vote: ${consensus.consensus} — BUY ${consensus.buyPct}% | SELL ${consensus.sellPct}% | HOLD ${consensus.holdPct}%
-Dissent Level: ${dissentPct}% — ${consensus.dissent > 0.3 ? 'SPLIT VOTE: agents disagree, be cautious with confidence' : 'strong agreement among agents'}
-Leading Agent: ${consensus.topStrategy}
-Full Debate: ${consensus.debate}`;
-
     const topHeadlines = Array.isArray(newsItems) ? newsItems.slice(0, 3)
         .map((n, i) => `${i + 1}. [${n.source || 'News'}] ${n.headline} (${n.sentiment || 'neutral'})`)
         .join('\n') : '';
@@ -100,7 +89,16 @@ Full Debate: ${consensus.debate}`;
         ? `\n=== RECENT NEWS (top 3 headlines) ===\n${topHeadlines}\n`
         : '';
 
-    const systemInstruction = 'You are an elite quantitative trading JSON API. Only output valid JSON with exactly these fields: action (string: BUY, SELL, or HOLD), reasoning (string), confidence (integer 0-100), lesson_learned (string), position_size_override (number or null).';
+    const systemInstruction = 'You are an elite quantitative trading JSON API. Only output valid JSON with exactly these fields: action (string: BUY, SELL, or HOLD), reasoning (string), confidence (integer 0-100), take_profit_pct (number or null), stop_loss_pct (number or null), position_size_override (number or null), lesson_learned (string).';
+
+    const recentCandles = candles.slice(-20).map(c => {
+        const t = new Date(c.time * 1000).toISOString().slice(11, 19);
+        const o = c.open != null ? `O:$${Number(c.open).toFixed(2)} ` : '';
+        const h = c.high != null ? `H:$${Number(c.high).toFixed(2)} ` : '';
+        const l = c.low  != null ? `L:$${Number(c.low).toFixed(2)} `  : '';
+        const vol = c.volume ? ` Vol:${Number(c.volume).toFixed(2)}` : '';
+        return `[T:${t}] ${o}${h}${l}C:$${Number(c.value).toFixed(2)}${vol}`;
+    });
 
     const prompt = `You are the Quant AI trading engine managing a paper trading portfolio.
 
@@ -109,18 +107,17 @@ Balance: $${state.balance.toFixed(2)}
 ${baseAsset} Holdings: ${state.assetHoldings} units (worth $${(state.assetHoldings * currentPrice).toFixed(2)})
 Total Portfolio Value: $${totalValue.toFixed(2)}
 Current Drawdown: ${drawdownPct.toFixed(2)}%
-Active Strategy: ${winnerDesc}
 
 === MARKET SIGNALS ===
 Asset: ${product}
 Current Price: $${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-Recent Price Data (last ${Math.min(pricePoints.length, 20)} ticks): ${JSON.stringify(pricePoints.slice(-20))}
+Recent Price Action (Last 20 minutes):
+${recentCandles.join('\n')}
+
 Fear & Greed Index: ${fearGreedStr}
 DeFi TVL 7d Change: ${tvlStr}
 Polymarket BTC Bull Probability: ${polyStr}
-Composite Signal Score: ${compositeStr}
 
-${consensusContext}
 ${newsContext}
 === RISK CONTEXT ===
 Daily P&L today: $${dailyPnl.toFixed(2)}
@@ -131,19 +128,13 @@ Circuit breaker: ${state.circuitBreaker?.tripped ? 'TRIPPED — ' + state.circui
 ${memoryContext || `First analysis for ${product}. Focus on momentum and mean-reversion rules.`}
 
 Given ALL signals above, what is your decision for ${baseAsset}?
-Action must be exactly 'BUY', 'SELL', or 'HOLD'. Respond with JSON only.`;
+Determine your action ('BUY', 'SELL', or 'HOLD'). Decide on a logic-backed 'take_profit_pct' (e.g. 5.5) and 'stop_loss_pct' (e.g. 2.0). Provide solid 'reasoning' and 'confidence'.
+Respond with JSON only.`;
 
     try {
-        const raw = await aiChat(systemInstruction, prompt, true, 500);
+        const raw = await aiChat(systemInstruction, prompt, true, 800);
         const decision = JSON.parse(raw);
-        const modelAction = ['BUY', 'SELL', 'HOLD'].includes(decision.action) ? decision.action : 'HOLD';
-        const agentAction = consensus.consensus || 'HOLD';
-        const finalAction = agentAction !== 'HOLD' ? agentAction : modelAction;
-
-        if (finalAction !== modelAction) {
-            decision.reasoning = `[Agent consensus override: ${agentAction}] ${decision.reasoning}`;
-            decision.confidence = Math.min(decision.confidence || 0, 68);
-        }
+        const finalAction = ['BUY', 'SELL', 'HOLD'].includes(decision.action) ? decision.action : 'HOLD';
         decision.action = finalAction;
 
         if (decision.action === 'SELL' && state.trades.length > 0) {
@@ -160,9 +151,37 @@ Action must be exactly 'BUY', 'SELL', or 'HOLD'. Respond with JSON only.`;
             userStore.recordLearning(userId, decision.lesson_learned);
         }
 
-        return { ...decision, signals, topStrategyId: consensus.topStrategyId, agentConsensus: consensus };
+        return decision;
     } catch (error) {
         console.error(`AI Engine Error for user ${userId}:`, error.message);
+        return null;
+    }
+}
+
+/**
+ * Phase 3: True LLM Self-Learning (Autopsy)
+ * Evaluates a closed trade and generates a concise lesson for the Vector DB/Memory.
+ */
+async function performAutopsy(userId, product, entryPrice, exitPrice, pnlPct) {
+    const isWin = pnlPct > 0;
+    const systemPrompt = 'You are a quantitative trading autopsy agent. Analyze the trade result and output a single concise sentence summarizing the lesson learned. Respond with JSON containing { "lesson": "..." }';
+    
+    const prompt = `
+Trade Autopsy for ${product}:
+- Entry Price: $${entryPrice.toFixed(2)}
+- Exit Price: $${exitPrice.toFixed(2)}
+- PnL: ${pnlPct.toFixed(2)}%
+
+This trade was a ${isWin ? 'WIN' : 'LOSS'}. 
+Based on standard market dynamics, why might this have happened, and what rule should we add to our memory to improve future trades? Keep it to one precise sentence.
+`;
+
+    try {
+        const raw = await aiChat(systemPrompt, prompt, true, 200);
+        const data = JSON.parse(raw);
+        return data.lesson || `Trade closed with ${pnlPct.toFixed(2)}% PnL.`;
+    } catch (err) {
+        console.error('Autopsy failed:', err.message);
         return null;
     }
 }
@@ -216,13 +235,9 @@ async function answerUserQueryMultiAgent(userId, userMessage, productId, onAgent
     const [baseAsset] = product.split('-');
 
     const signals = await getSignals().catch(() => null);
-    const strategies = userStore.getStrategies(userId);
 
     const fearGreedStr = signals?.fearGreed ? `${signals.fearGreed.value}/100 — ${signals.fearGreed.classification}` : 'N/A';
     const compositeStr = signals ? `${signals.compositeScore > 0 ? '+' : ''}${signals.compositeScore}` : 'N/A';
-    const strategyContext = strategies.map(s =>
-        `${s.name}: ${s.wins}W/${s.losses}L, Sharpe ${s.sharpe.toFixed(2)}, signal=${s.lastSignal || 'HOLD'}`
-    ).join(' | ');
     const learningContext = state.learningHistory.slice(0, 5).map((h, i) => `${i + 1}. ${h.knowledge}`).join('\n');
 
     const sharedContext = `=== LIVE MARKET DATA ===
@@ -230,7 +245,6 @@ Asset: ${product} | Price context from last session
 Portfolio: $${state.balance.toFixed(2)} cash, ${state.assetHoldings} ${baseAsset} holdings
 Engine: ${state.engineStatus || 'STOPPED'} | Mode: ${state.tradingMode || 'FULL_AUTO'}
 Fear & Greed: ${fearGreedStr} | Composite: ${compositeStr}
-Agent Signals: ${strategyContext || 'No signals yet'}
 Learned Rules: ${learningContext || 'None yet'}
 
 === USER MESSAGE ===
@@ -274,4 +288,4 @@ Synthesize the above arguments. Agree or disagree, and provide final direction.`
     }
 }
 
-module.exports = { evaluateMarketSignal, answerUserQueryMultiAgent };
+module.exports = { evaluateMarketSignal, answerUserQueryMultiAgent, performAutopsy };

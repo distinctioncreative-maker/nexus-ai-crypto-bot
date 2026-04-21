@@ -151,7 +151,7 @@ function StrategyCard({ strategy, isLeader }) {
               )}
             </div>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
-              {Object.entries(strategy.parameters || {}).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+              {strategy.role || Object.entries(strategy.parameters || {}).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(' · ')}
             </div>
           </div>
         </div>

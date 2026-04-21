@@ -63,7 +63,13 @@ class UserStore {
                     pnlToday: 0,
                     tradesExecuted: 0
                 },
-                strategies: [],
+                strategies: [
+                    { id: 'MOMENTUM',        name: 'Atlas', role: 'Momentum Analyst',             color: '#F7931A', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
+                    { id: 'MEAN_REVERSION',  name: 'Vera',  role: 'Mean Reversion Quant',         color: '#627EEA', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
+                    { id: 'TREND_FOLLOWING', name: 'Rex',   role: 'Trend Following Strategist',   color: '#9945FF', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
+                    { id: 'SENTIMENT_DRIVEN',name: 'Luna',  role: 'Sentiment & Macro Intelligence',color: '#34C759', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
+                    { id: 'COMBINED',        name: 'Orion', role: 'Chief Strategist',             color: '#0A84FF', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
+                ],
                 strategyTournament: {
                     lastCycleClosedTrades: 0
                 },
@@ -337,6 +343,25 @@ class UserStore {
         // Track realized P&L: positive when selling (gain), negative when buying (cost)
         const pnlDelta = type === 'SELL' ? cost : -cost;
         this.updateDailyStats(userId, pnlDelta);
+
+        // Phase 3 LLM Self-Learning: Trigger Autopsy on Sell
+        if (type === 'SELL') {
+            // Find the most recent buy for this product
+            const lastBuy = user.paperTradingState.trades.find(t => t.type === 'BUY' && t.product === user.selectedProduct);
+            if (lastBuy) {
+                const entryPrice = lastBuy.price;
+                const pnlPct = ((price - entryPrice) / entryPrice) * 100;
+                
+                // Fire and forget the LLM autopsy
+                setTimeout(() => {
+                    const { performAutopsy } = require('./services/aiEngine');
+                    performAutopsy(userId, user.selectedProduct, entryPrice, price, pnlPct)
+                        .then(lesson => {
+                            if (lesson) this.recordLearning(userId, lesson);
+                        }).catch(err => console.error('Autopsy background error:', err.message));
+                }, 500); // Slight delay so it doesn't block the trade execution path
+            }
+        }
 
         return {
             ...trade,

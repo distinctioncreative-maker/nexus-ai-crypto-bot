@@ -19,7 +19,7 @@ let isSubscribed = false;
 
 function getProductData(productId) {
     if (!productData.has(productId)) {
-        productData.set(productId, { price: 0, history: [] });
+        productData.set(productId, { price: 0, history: [], candles: [] });
     }
     return productData.get(productId);
 }
@@ -29,34 +29,51 @@ function getProductData(productId) {
  * Public feed format: { type: 'ticker', product_id, price, ... }
  */
 function handleTickerMessage(message) {
-    // Public Exchange WS format: flat object with product_id + price
+    // Process ticker value
+    let price = 0;
+    let productId = null;
+
     if (message.type === 'ticker' && message.product_id) {
-        const price = Number.parseFloat(message.price);
-        const productId = message.product_id;
-        if (!productId || !Number.isFinite(price) || price <= 0) return;
-
-        const data = getProductData(productId);
-        data.price = price;
-        data.history.push(price);
-        if (data.history.length > 200) data.history.shift();
-        return;
-    }
-
-    // Fallback: Advanced Trade WS nested format (if user overrides MARKET_WS_URL)
-    const events = Array.isArray(message.events) ? message.events : [];
-    for (const event of events) {
-        const tickers = Array.isArray(event.tickers) ? event.tickers : [];
-        for (const ticker of tickers) {
-            const price = Number.parseFloat(ticker?.price);
-            const productId = ticker?.product_id;
-            if (!productId || !Number.isFinite(price) || price <= 0) continue;
-
-            const data = getProductData(productId);
-            data.price = price;
-            data.history.push(price);
-            if (data.history.length > 200) data.history.shift();
+        price = Number.parseFloat(message.price);
+        productId = message.product_id;
+    } else {
+        const events = Array.isArray(message.events) ? message.events : [];
+        for (const event of events) {
+            const tickers = Array.isArray(event.tickers) ? event.tickers : [];
+            for (const ticker of tickers) {
+                if (ticker && ticker.product_id && ticker.price) {
+                    price = Number.parseFloat(ticker.price);
+                    productId = ticker.product_id;
+                    break;
+                }
+            }
+            if (productId) break;
         }
     }
+
+    if (!productId || !Number.isFinite(price) || price <= 0) return;
+
+    const data = getProductData(productId);
+    data.price = price;
+    data.history.push(price);
+    if (data.history.length > 200) data.history.shift();
+
+    // Update ongoing 1M candle for the LLM
+    const nowSecs = Math.floor(Date.now() / 1000);
+    const minuteTime = nowSecs - (nowSecs % 60);
+
+    if (data.candles.length === 0 || data.candles[data.candles.length - 1].time < minuteTime) {
+        // New minute: open = current price, track OHLCV
+        data.candles.push({ time: minuteTime, open: price, high: price, low: price, value: price, volume: 0 });
+    } else {
+        // Update OHLCV for the current minute
+        const c = data.candles[data.candles.length - 1];
+        c.high = Math.max(c.high, price);
+        c.low = Math.min(c.low, price);
+        c.value = price; // close
+    }
+
+    if (data.candles.length > 300) data.candles.shift();
 }
 
 function subscribeToAllProducts() {
@@ -122,7 +139,7 @@ async function fetchHistoricalCandles(productId) {
 
         // Coinbase returns [timestamp, low, high, open, close, volume] newest-first
         const candles = res.data
-            .map(c => ({ time: c[0], value: c[4] })) // close price
+            .map(c => ({ time: c[0], low: c[1], high: c[2], open: c[3], value: c[4], volume: c[5] || 0 }))
             .filter(c => Number.isFinite(c.time) && Number.isFinite(c.value) && c.value > 0)
             .sort((a, b) => a.time - b.time);
 
@@ -233,13 +250,12 @@ function startUserStream(userId, broadcastFn, initialProduct) {
         fetchHistoricalCandles(productId).then(candles => {
             if (candles.length > 0) {
                 broadcastFn('CANDLE_HISTORY', candles);
-                // Seed the price history for AI evaluation with the last 100 close prices
+                // Seed the candles for AI evaluation
                 const data = getProductData(productId);
-                if (data.history.length < 20) {
-                    const closes = candles.slice(-100).map(c => c.value);
-                    data.history = closes;
-                    data.price = closes[closes.length - 1];
-                }
+                data.candles = [...candles];
+                const closes = candles.slice(-100).map(c => c.value);
+                data.history = closes;
+                data.price = closes[closes.length - 1];
             }
         }).catch(() => {});
         return true;
@@ -352,33 +368,39 @@ function startUserStream(userId, broadcastFn, initialProduct) {
             if (now % 10000 < 2200) {
                 broadcastFn('AI_STATUS', `Engine paused — click PAPER to start trading ${activeProduct}`);
             }
-        } else if (data.history.length < 20) {
-            broadcastFn('AI_STATUS', `Collecting market data (${data.history.length}/20 ticks)…`);
+        } else if (data.candles.length < 5) {
+            broadcastFn('AI_STATUS', `Collecting market data (${data.candles.length}/5 candles)…`);
         } else if (now - lastAiEvalTime > 30000) {
             lastAiEvalTime = now;
             broadcastFn('AI_STATUS', `Analyzing ${activeProduct} market structure…`);
 
-            const decision = await evaluateMarketSignal(userId, [...data.history], activeProduct);
+            const decision = await evaluateMarketSignal(userId, [...data.candles], activeProduct);
 
             if (!decision) {
                 broadcastFn('AI_STATUS', `⚠️ AI eval failed for ${activeProduct} — check server logs`);
-                broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
                 return;
             }
 
             broadcastFn('AI_STATUS', `${activeProduct}: ${decision.action} | Confidence ${decision.confidence}%${decision.action === 'HOLD' ? ' — holding position' : ''}`);
-
-            // Track which strategy led to this decision
-            if (decision?.topStrategyId) {
-                userStore._ensureUser(userId).activeStrategyId = decision.topStrategyId;
-            }
+            broadcastFn('AI_THESIS', decision.reasoning);
 
             const minConfidence = engine.engineStatus === 'LIVE_RUNNING' ? 80 : 65;
             if (decision && decision.action !== 'HOLD' && decision.confidence >= minConfidence) {
                 if (engine.engineStatus === 'STOPPED') {
                     broadcastFn('AI_STATUS', `${activeProduct}: ${decision.action} signal observed; execution engine is stopped.`);
-                    broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
                     return;
+                }
+
+                // LLM Agentic Risk Management: Apply AI's dynamic TP/SL
+                if (decision.take_profit_pct || decision.stop_loss_pct) {
+                    const rs = userStore._ensureUser(userId).riskSettings;
+                    if (decision.action === 'BUY') {
+                        if (decision.take_profit_pct) rs.takeProfitPrice = data.price * (1 + (decision.take_profit_pct / 100));
+                        if (decision.stop_loss_pct) rs.stopLossPrice = data.price * (1 - (decision.stop_loss_pct / 100));
+                    } else if (decision.action === 'SELL') {
+                        rs.takeProfitPrice = null; // Clear on sell
+                        rs.stopLossPrice = null;
+                    }
                 }
 
                 const suggestedAmount = getSuggestedTradeSize(userId, data.price);
