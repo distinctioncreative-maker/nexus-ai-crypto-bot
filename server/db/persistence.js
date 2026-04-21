@@ -45,11 +45,10 @@ async function loadUserState(supabase, userId) {
             .eq('user_id', userId);
 
         // Decrypt keys
-        let cbKey = null, cbSecret = null, gemKey = null;
+        let cbKey = null, cbSecret = null;
         try {
             if (settings.cb_key_enc) cbKey = UserStore.decrypt(settings.cb_key_enc);
             if (settings.cb_sec_enc) cbSecret = UserStore.decrypt(settings.cb_sec_enc);
-            if (settings.gem_key_enc) gemKey = UserStore.decrypt(settings.gem_key_enc);
         } catch (e) {
             console.error('Key decryption failed for user', userId, e.message);
         }
@@ -61,7 +60,6 @@ async function loadUserState(supabase, userId) {
             keys: {
                 coinbaseApiKey: cbKey,
                 coinbaseApiSecret: cbSecret,
-                geminiApiKey: gemKey
             },
             balance: parseFloat(settings.balance) || 100000,
             assetHoldings: parseFloat(settings.asset_holdings) || 0,
@@ -121,7 +119,6 @@ async function saveUserSettings(supabase, userId, user) {
         // Encrypt keys if present
         if (user.keys?.coinbaseApiKey) row.cb_key_enc = UserStore.encrypt(user.keys.coinbaseApiKey);
         if (user.keys?.coinbaseApiSecret) row.cb_sec_enc = UserStore.encrypt(user.keys.coinbaseApiSecret);
-        if (user.keys?.geminiApiKey) row.gem_key_enc = UserStore.encrypt(user.keys.geminiApiKey);
 
         await supabase.from('user_settings').upsert(row, { onConflict: 'user_id' });
     } catch (err) {

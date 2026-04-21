@@ -369,7 +369,7 @@ function startUserStream(userId, broadcastFn, initialProduct) {
                 broadcastFn('AI_STATUS', `Engine paused — click PAPER to start trading ${activeProduct}`);
             }
         } else if (data.candles.length < 5) {
-            broadcastFn('AI_STATUS', `Collecting market data (${data.candles.length}/5 candles)…`);
+            broadcastFn('AI_STATUS', `Warming up — collecting candles (${data.candles.length}/5)…`);
         } else if (now - lastAiEvalTime > 30000) {
             lastAiEvalTime = now;
             broadcastFn('AI_STATUS', `Analyzing ${activeProduct} market structure…`);
