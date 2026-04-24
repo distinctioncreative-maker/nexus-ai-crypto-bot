@@ -16,6 +16,7 @@ const productData = new Map();
 
 let marketWs = null;
 let isSubscribed = false;
+let reconnectDelay = 5000; // exponential backoff, resets on successful subscription
 
 function getProductData(productId) {
     if (!productData.has(productId)) {
@@ -85,6 +86,7 @@ function subscribeToAllProducts() {
         channels: ['ticker', 'heartbeat']
     }));
     isSubscribed = true;
+    reconnectDelay = 5000; // reset backoff on successful subscribe
     console.log(`📡 Subscribed to ${SUPPORTED_PRODUCTS.length} products via public Coinbase feed`);
 }
 
@@ -116,11 +118,13 @@ function ensureMarketConnection() {
     });
 
     marketWs.on('error', (err) => console.error('Market WS Error:', err.message));
-    marketWs.on('close', () => {
+    marketWs.on('close', (code, reason) => {
         marketWs = null;
         isSubscribed = false;
-        console.log('Market WS closed. Reconnecting in 5s...');
-        setTimeout(ensureMarketConnection, 5000);
+        const reasonStr = reason?.toString() || 'no reason';
+        console.log(`Market WS closed (code=${code}, reason=${reasonStr}). Reconnecting in ${reconnectDelay / 1000}s...`);
+        setTimeout(ensureMarketConnection, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 60000); // cap at 60s
     });
 }
 
