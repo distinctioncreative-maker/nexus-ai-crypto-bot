@@ -56,6 +56,7 @@ function getStatusPayload(userId) {
     const state = userStore.getPaperState(userId);
     return {
         isConfigured: userStore.hasKeys(userId),
+        hasCoinbaseKeys: userStore.hasCoinbaseKeys(userId),
         paperMode: state.engineStatus !== 'LIVE_RUNNING',
         userId,
         engineStatus: state.engineStatus,

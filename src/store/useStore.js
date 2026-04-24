@@ -5,6 +5,8 @@ export const useStore = create((set) => ({
     // Auth & Modes
     isConfigured: false,
     setIsConfigured: (status) => set({ isConfigured: status }),
+    hasCoinbaseKeys: false,
+    setHasCoinbaseKeys: (v) => set({ hasCoinbaseKeys: v }),
     isLiveMode: false,
     setIsLiveMode: (status) => set({ isLiveMode: status }),
     engineStatus: 'STOPPED',
@@ -53,6 +55,8 @@ export const useStore = create((set) => ({
     // AI & Audit
     aiStatus: 'Standby',
     setAiStatus: (status) => set({ aiStatus: status }),
+    aiThesis: '',
+    setAiThesis: (thesis) => set({ aiThesis: thesis }),
     auditLogs: [],
     addAuditLog: (log) => set((state) => ({ auditLogs: [log, ...state.auditLogs] })),
 

@@ -29,6 +29,7 @@ function App() {
   const {
     isConfigured, setIsConfigured, isLiveMode, setIsLiveMode,
     engineStatus, setEngineStatus, tutorialsActive, toggleTutorials, tradingMode, setTradingMode,
+    hasCoinbaseKeys, setHasCoinbaseKeys,
   } = useStore();
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -79,6 +80,7 @@ function App() {
       .then(readApiResponse)
       .then(data => {
         setIsConfigured(data.isConfigured);
+        setHasCoinbaseKeys(!!data.hasCoinbaseKeys);
         if (data.engineStatus) setEngineStatus(data.engineStatus);
         if (typeof data.isLiveMode === 'boolean') setIsLiveMode(data.isLiveMode);
         if (data.tradingMode) setTradingMode(data.tradingMode);
@@ -178,15 +180,23 @@ function App() {
               </button>
             </div>
 
-            <div className="mode-toggle-container" title="Live trading — AI Assisted, real Coinbase orders">
-              <button
-                className={`mode-pill ${engineStatus === 'LIVE_RUNNING' ? 'live' : ''}`}
-                onClick={() => setShowLiveConfirm(true)}
-                style={{ border: 'none', cursor: 'pointer' }}
-              >
-                <ShieldAlert size={16}/> LIVE
-              </button>
-            </div>
+            {hasCoinbaseKeys ? (
+              <div className="mode-toggle-container" title="Live trading — AI Assisted, real Coinbase orders">
+                <button
+                  className={`mode-pill ${engineStatus === 'LIVE_RUNNING' ? 'live' : ''}`}
+                  onClick={() => setShowLiveConfirm(true)}
+                  style={{ border: 'none', cursor: 'pointer' }}
+                >
+                  <ShieldAlert size={16}/> LIVE
+                </button>
+              </div>
+            ) : (
+              <div className="mode-toggle-container" title="Add Coinbase API keys to enable live trading">
+                <div className="mode-pill" style={{ opacity: 0.35, cursor: 'not-allowed', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <KeyRound size={14}/> LIVE
+                </div>
+              </div>
+            )}
 
             {/* Trading mode toggle: Full Auto / AI Assisted */}
             <div
