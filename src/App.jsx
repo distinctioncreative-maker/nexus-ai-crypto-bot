@@ -36,6 +36,7 @@ function App() {
   const [backendError, setBackendError] = useState('');
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
   const [showReconfigure, setShowReconfigure] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Listen for Supabase auth state changes
   useEffect(() => {
@@ -141,8 +142,6 @@ function App() {
   }
 
   // Gate 3: Fully authenticated + configured → show Trading Terminal
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
   return (
     <BrowserRouter>
       <div className={`app-container ${isLiveMode ? 'live-mode' : 'paper-mode'}`}>
