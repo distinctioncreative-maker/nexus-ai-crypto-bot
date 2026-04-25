@@ -1,21 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Bot, Mail, Lock, ArrowRight, Sparkles } from 'lucide-react';
 import './AuthPage.css';
 
 export default function AuthPage({ onAuth }) {
     const [isSignUp, setIsSignUp] = useState(false);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const emailRef = useRef(null);
+    const passwordRef = useRef(null);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError('');
         setSuccess('');
+
+        // Read directly from DOM — handles mobile autofill that bypasses onChange
+        const email = (emailRef.current?.value || '').trim();
+        const password = passwordRef.current?.value || '';
+
+        if (!email) {
+            setError('Please enter your email address.');
+            setLoading(false);
+            return;
+        }
+        if (!password) {
+            setError('Please enter your password.');
+            setLoading(false);
+            return;
+        }
 
         // Local dev fallback — no Supabase configured
         if (!supabase) {
@@ -25,10 +40,7 @@ export default function AuthPage({ onAuth }) {
 
         try {
             if (isSignUp) {
-                const { data, error: signUpError } = await supabase.auth.signUp({
-                    email,
-                    password
-                });
+                const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
                 if (signUpError) throw signUpError;
                 if (data.user && !data.session) {
                     setSuccess('Check your email for a confirmation link!');
@@ -36,10 +48,7 @@ export default function AuthPage({ onAuth }) {
                     onAuth(data.user);
                 }
             } else {
-                const { data, error: signInError } = await supabase.auth.signInWithPassword({
-                    email,
-                    password
-                });
+                const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
                 if (signInError) throw signInError;
                 onAuth(data.user);
             }
@@ -71,25 +80,23 @@ export default function AuthPage({ onAuth }) {
                     <div className="auth-input-group">
                         <Mail size={18} />
                         <input
+                            ref={emailRef}
                             type="email"
                             placeholder="Email address"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
                             autoComplete="email"
+                            inputMode="email"
+                            style={{ fontSize: '16px' }}
                         />
                     </div>
 
                     <div className="auth-input-group">
                         <Lock size={18} />
                         <input
+                            ref={passwordRef}
                             type="password"
                             placeholder="Password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            minLength={6}
                             autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                            style={{ fontSize: '16px' }}
                         />
                     </div>
 
