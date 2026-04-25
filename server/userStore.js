@@ -261,6 +261,11 @@ class UserStore {
         user.killSwitchReason = '';
         user.circuitBreaker.tripped = false;
         user.circuitBreaker.reason = '';
+        // Clear stale TP/SL prices — if not cleared, a price set for a cheap coin
+        // (e.g. DOGE $2.657) will immediately fire against a different coin (e.g. BTC $77k)
+        // on the next tick, re-tripping the circuit breaker right after reset.
+        user.riskSettings.takeProfitPrice = null;
+        user.riskSettings.stopLossPrice = null;
     }
 
     addNotification(userId, { type, title, body }) {
