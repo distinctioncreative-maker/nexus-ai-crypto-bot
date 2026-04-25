@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown, Search } from 'lucide-react';
-import { createChart, ColorType, AreaSeries } from 'lightweight-charts';
+import { createChart, ColorType, CandlestickSeries } from 'lightweight-charts';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { sendProductChange } from '../services/websocket';
 import { authFetch } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
+import WatchlistSidebar from './WatchlistSidebar';
+import ActivePositionsBar from './ActivePositionsBar';
 
 const FALLBACK_PRODUCTS = [
     { id: 'BTC-USD', base: 'BTC', name: 'Bitcoin' },
@@ -33,9 +35,29 @@ const FALLBACK_PRODUCTS = [
 export default function Dashboard() {
     const {
         currentPrice, aiStatus, aiThesis, trades, balance, assetHoldings,
-        isLiveMode, marketHistory, selectedProduct,
-        availableProducts, setAvailableProducts, lastTickTime
+        isLiveMode, candleHistory, selectedProduct, watchlist,
+        availableProducts, setAvailableProducts, lastTickTime,
+        productPrices, productHoldings
     } = useStore();
+
+    // Compute total portfolio value across all held products
+    const totalPositionsValue = useMemo(() => {
+        let val = assetHoldings * currentPrice; // selected product
+        const holdings = productHoldings || {};
+        for (const [prod, held] of Object.entries(holdings)) {
+            if (prod === selectedProduct) continue;
+            if ((held?.assetHoldings || 0) > 0) {
+                const price = productPrices[prod] || held._lastPrice || 0;
+                if (price > 0) val += held.assetHoldings * price;
+            }
+        }
+        return val;
+    }, [assetHoldings, currentPrice, productHoldings, productPrices, selectedProduct]);
+
+    const totalPortfolioValue = balance + totalPositionsValue;
+    const initialBalance = 100000;
+    const totalPnl = totalPortfolioValue - initialBalance;
+    const totalPnlPct = (totalPnl / initialBalance) * 100;
 
     // Stale data detection — show reconnecting badge if no TICK for > 8s
     const [isStale, setIsStale] = useState(false);
@@ -71,11 +93,10 @@ export default function Dashboard() {
     }, []);
 
     const chartContainerRef = useRef();
-    const lineSeriesRef = useRef(null);
+    const candleSeriesRef = useRef(null);
     const chartRef = useRef(null);
     const tooltipRef = useRef(null);
 
-    const priceColor = isLiveMode ? 'rgba(255, 69, 58, 1)' : 'rgba(10, 132, 255, 1)';
     const bgColor = 'transparent';
 
     const productList = availableProducts.length > 0 ? availableProducts : FALLBACK_PRODUCTS;
@@ -98,7 +119,7 @@ export default function Dashboard() {
         if (chartRef.current) {
             chartRef.current.remove();
             chartRef.current = null;
-            lineSeriesRef.current = null;
+            candleSeriesRef.current = null;
         }
 
         const chart = createChart(chartContainerRef.current, {
@@ -122,14 +143,15 @@ export default function Dashboard() {
 
         chartRef.current = chart;
 
-        const lineSeries = chart.addSeries(AreaSeries, {
-            lineColor: priceColor,
-            topColor: isLiveMode ? 'rgba(255, 69, 58, 0.25)' : 'rgba(10, 132, 255, 0.25)',
-            bottomColor: 'rgba(0, 0, 0, 0)',
-            lineWidth: 2,
+        const candleSeries = chart.addSeries(CandlestickSeries, {
+            upColor: '#34C759',
+            downColor: '#ff453a',
+            borderVisible: false,
+            wickUpColor: '#34C759',
+            wickDownColor: '#ff453a',
         });
 
-        lineSeriesRef.current = lineSeries;
+        candleSeriesRef.current = candleSeries;
 
         const handleResize = () => {
             if (chartContainerRef.current && chartRef.current) {
@@ -138,7 +160,7 @@ export default function Dashboard() {
         };
         window.addEventListener('resize', handleResize);
 
-        // Crosshair tooltip listener
+        // Crosshair tooltip listener — shows OHLC on hover
         chart.subscribeCrosshairMove(param => {
             if (!tooltipRef.current || !chartContainerRef.current) return;
             if (
@@ -153,19 +175,23 @@ export default function Dashboard() {
                 return;
             }
 
-            const areaData = param.seriesData.get(lineSeries);
-            if (!areaData) return;
-            const price = areaData.value;
-            const coordinate = lineSeries.priceToCoordinate(price);
-            
+            const candleData = param.seriesData.get(candleSeries);
+            if (!candleData) return;
+            const { open, high, low, close } = candleData;
+            const coordinate = candleSeries.priceToCoordinate(close);
+            const isUp = close >= open;
+
             tooltipRef.current.style.display = 'block';
             tooltipRef.current.style.left = param.point.x + 'px';
-            tooltipRef.current.style.top = coordinate + 'px';
-            
-            const dateStr = new Date(param.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            tooltipRef.current.style.top = (coordinate || 0) + 'px';
+
+            const dateStr = new Date(param.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const fmt = (v) => v != null ? `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
             tooltipRef.current.innerHTML = `
-                <div style="font-weight:600;font-size:0.9rem;margin-bottom:2px">$${price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
-                <div style="color:var(--text-secondary);font-size:0.75rem">${dateStr}</div>
+                <div style="font-weight:700;font-size:0.85rem;margin-bottom:3px;color:${isUp ? '#34C759' : '#ff453a'}">${fmt(close)}</div>
+                <div style="color:rgba(255,255,255,0.5);font-size:0.7rem;line-height:1.5">
+                    O: ${fmt(open)}<br/>H: ${fmt(high)}<br/>L: ${fmt(low)}<br/>${dateStr}
+                </div>
             `;
         });
 
@@ -174,40 +200,42 @@ export default function Dashboard() {
             if (chartRef.current) {
                 chartRef.current.remove();
                 chartRef.current = null;
-                lineSeriesRef.current = null;
+                candleSeriesRef.current = null;
             }
         };
-    }, [isLiveMode, selectedProduct, priceColor]); // Recreate on mode or product change
+    }, [isLiveMode, selectedProduct]); // Recreate on mode or product change
 
-    // Seed / update chart whenever market history changes.
-    // setData() replaces the full series so the chart populates immediately on mount
-    // and after product switches — not just one-point-at-a-time.
+    // Seed / update chart whenever candle history changes.
     useEffect(() => {
-        if (lineSeriesRef.current && marketHistory.length > 0) {
+        if (candleSeriesRef.current && candleHistory.length > 0) {
             try {
-                lineSeriesRef.current.setData(marketHistory);
+                candleSeriesRef.current.setData(candleHistory);
 
-                // Add trade markers to chart
-                const productTrades = trades.filter(t => t.product === selectedProduct);
-                const markers = productTrades.map(trade => {
-                    // Try to align trade exactly to a chart timestamp, or just use the trade time if close
-                    const tradeTimeSecs = Math.floor(new Date(trade.timestamp).getTime() / 1000);
-                    const isBuy = trade.type === 'BUY';
-                    return {
-                        time: tradeTimeSecs,
-                        position: isBuy ? 'belowBar' : 'aboveBar',
-                        color: isBuy ? '#34C759' : '#ff453a',
-                        shape: isBuy ? 'arrowUp' : 'arrowDown',
-                        text: `${isBuy ? 'BUY' : 'SELL'} @ $${trade.price.toLocaleString()}`
-                    };
-                }).sort((a, b) => a.time - b.time);
+                // Add trade execution markers (buy=green arrow up, sell=red arrow down)
+                const productTrades = trades.filter(t => t.product === selectedProduct || (!t.product && selectedProduct));
+                const firstCandleTime = candleHistory[0]?.time || 0;
+                const markers = productTrades
+                    .map(trade => {
+                        const tradeTimeSecs = Math.floor(new Date(trade.time).getTime() / 1000);
+                        if (tradeTimeSecs < firstCandleTime) return null; // outside chart range
+                        const isBuy = trade.type === 'BUY';
+                        return {
+                            time: tradeTimeSecs,
+                            position: isBuy ? 'belowBar' : 'aboveBar',
+                            color: isBuy ? '#34C759' : '#ff453a',
+                            shape: isBuy ? 'arrowUp' : 'arrowDown',
+                            text: `${isBuy ? 'B' : 'S'} $${trade.price != null ? Number(trade.price).toLocaleString('en-US', { maximumFractionDigits: 0 }) : ''}`
+                        };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a.time - b.time);
 
-                lineSeriesRef.current.setMarkers(markers);
+                candleSeriesRef.current.setMarkers(markers);
             } catch {
                 // Ignore lightweight-charts ordering errors silently
             }
         }
-    }, [marketHistory, trades, selectedProduct]);
+    }, [candleHistory, trades, selectedProduct]);
 
     const handleProductChange = (productId) => {
         sendProductChange(productId);
@@ -236,11 +264,27 @@ export default function Dashboard() {
 
                 <div className="glass-panel metric-card">
                     <div className="metric-label">{activeProduct.base} Live Price</div>
-                    <div className="metric-value price-display" style={{ color: priceColor }}>
+                    <div className="metric-value price-display" style={{ color: isLiveMode ? 'rgba(255, 69, 58, 1)' : 'rgba(10, 132, 255, 1)' }}>
                         {currentPrice > 0
                             ? `$${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
                             : <span style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>Connecting…</span>
                         }
+                    </div>
+                </div>
+
+                <div className="glass-panel metric-card">
+                    <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {totalPnl >= 0 ? <TrendingUp size={16} color="var(--accent-green)" /> : <TrendingDown size={16} color="var(--accent-red)" />}
+                        Total P&amp;L
+                    </div>
+                    <div className="metric-value" style={{
+                        fontSize: '1.1rem', marginTop: '0.2rem',
+                        color: totalPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'
+                    }}>
+                        {totalPnl >= 0 ? '+' : ''}${totalPnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <span style={{ fontSize: '0.75rem', marginLeft: '0.4rem', opacity: 0.8 }}>
+                            ({totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)
+                        </span>
                     </div>
                 </div>
 
@@ -381,8 +425,15 @@ export default function Dashboard() {
                 </motion.div>
             )}
 
-            {/* Chart + Trade Feed Grid */}
-            <div className="dashboard-grid">
+            {/* Active Positions Bar — shows all currently held coins with live P&L */}
+            <motion.div variants={itemVariants}>
+                <ActivePositionsBar />
+            </motion.div>
+
+            {/* Chart + Trade Feed Grid (with Watchlist Sidebar) */}
+            <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'flex-start' }}>
+                <WatchlistSidebar />
+            <div className="dashboard-grid" style={{ flex: 1, minWidth: 0 }}>
                 <motion.div className="glass-panel widget chart-container" variants={itemVariants}>
                     <div className="widget-header">
                         <h2 className="widget-title">
@@ -450,6 +501,36 @@ export default function Dashboard() {
                         </div>
                     </div>
 
+                {/* Watchlist quick-switch tab pills */}
+                {watchlist.length > 0 && (
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+                        {watchlist.map(pid => {
+                            const base = pid.split('-')[0];
+                            const isActive = pid === selectedProduct;
+                            return (
+                                <button
+                                    key={pid}
+                                    onClick={() => handleProductChange(pid)}
+                                    style={{
+                                        padding: '0.25rem 0.65rem',
+                                        fontSize: '0.72rem',
+                                        fontFamily: 'var(--font-mono)',
+                                        fontWeight: isActive ? 700 : 500,
+                                        background: isActive ? 'rgba(10,132,255,0.18)' : 'rgba(255,255,255,0.05)',
+                                        border: `1px solid ${isActive ? 'rgba(10,132,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                                        borderRadius: '6px',
+                                        color: isActive ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.12s',
+                                    }}
+                                >
+                                    {base}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
                 {/* Chart Area */}
                 <motion.div className="glass-panel" variants={itemVariants} style={{ padding: '1rem', position: 'relative' }}>
                     <div style={{
@@ -496,36 +577,40 @@ export default function Dashboard() {
                     </div>
 
                     <div style={{ overflowY: 'auto', paddingRight: '0.5rem', flexGrow: 1 }}>
-                        {trades.filter(t => !t.product || t.product === selectedProduct).length === 0 && (
+                        {trades.length === 0 && (
                             <div style={{ textAlign: 'center', color: 'var(--text-secondary)', marginTop: '2rem', fontSize: '0.85rem' }}>
-                                Awaiting AI signals on {selectedProduct}…
+                                Awaiting AI signals…
                             </div>
                         )}
-                        {trades.filter(t => !t.product || t.product === selectedProduct).map(trade => (
-                            <motion.div
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                key={trade.id}
-                                className="trade-item"
-                            >
-                                <div className="trade-info">
-                                    <span className={`trade-type ${trade.type?.toLowerCase()}`}>
-                                        {trade.type} • {trade.product || selectedProduct}
-                                    </span>
-                                    <span className="trade-time">{trade.time ? new Date(trade.time).toLocaleTimeString() : '—'}</span>
-                                </div>
-                                <div style={{ textAlign: 'right' }}>
-                                    <div className="trade-amount">{trade.amount} {activeProduct.base}</div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                        @ ${trade.price != null ? trade.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                        {trades.map(trade => {
+                            const tradeBase = (trade.product || selectedProduct).split('-')[0];
+                            return (
+                                <motion.div
+                                    initial={{ opacity: 0, x: -20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    key={trade.id}
+                                    className="trade-item"
+                                >
+                                    <div className="trade-info">
+                                        <span className={`trade-type ${trade.type?.toLowerCase()}`}>
+                                            {trade.type} • {trade.product || selectedProduct}
+                                        </span>
+                                        <span className="trade-time">{trade.time ? new Date(trade.time).toLocaleTimeString() : '—'}</span>
                                     </div>
-                                </div>
-                            </motion.div>
-                        ))}
+                                    <div style={{ textAlign: 'right' }}>
+                                        <div className="trade-amount">{Number(trade.amount).toFixed(6)} {tradeBase}</div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                            @ ${trade.price != null ? trade.price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
                     </div>
                 </motion.div>
             </motion.div>
             </div>
+            </motion.div>
         </motion.div>
     );
 }

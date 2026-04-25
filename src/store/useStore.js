@@ -21,7 +21,17 @@ export const useStore = create((set) => ({
 
     // Instrument selection
     selectedProduct: 'BTC-USD',
-    setSelectedProduct: (product) => set({ selectedProduct: product, marketHistory: [], currentPrice: 0 }),
+    setSelectedProduct: (product) => set({ selectedProduct: product, marketHistory: [], candleHistory: [], currentPrice: 0 }),
+
+    // Multi-asset watchlist
+    watchlist: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD'],
+    setWatchlist: (watchlist) => set({ watchlist }),
+
+    // Per-product AI signals from PRODUCT_SIGNAL messages
+    productSignals: {},
+    setProductSignal: (product, signal) => set((state) => ({
+        productSignals: { ...state.productSignals, [product]: signal }
+    })),
 
     // WebSockets & Market Data
     wsConnected: false,
@@ -36,8 +46,34 @@ export const useStore = create((set) => ({
         if (newHistory.length > 500) newHistory.shift();
         return { marketHistory: newHistory };
     }),
-    clearMarketHistory: () => set({ marketHistory: [], currentPrice: 0 }),
+    clearMarketHistory: () => set({ marketHistory: [], candleHistory: [], currentPrice: 0 }),
     setMarketHistory: (points) => set({ marketHistory: points }),
+    // OHLCV candlestick data — used by the chart for proper candlestick rendering
+    candleHistory: [],
+    setCandleHistory: (candles) => set({ candleHistory: candles }),
+    // Update the current 1-minute candle in place (called on every TICK)
+    updateLiveCandle: (price) => set((state) => {
+        const nowSecs = Math.floor(Date.now() / 1000);
+        const minuteTime = nowSecs - (nowSecs % 60);
+        const history = [...state.candleHistory];
+        if (history.length === 0) {
+            return { candleHistory: [{ time: minuteTime, open: price, high: price, low: price, close: price }] };
+        }
+        const last = history[history.length - 1];
+        if (last.time === minuteTime) {
+            history[history.length - 1] = {
+                time: minuteTime,
+                open: last.open,
+                high: Math.max(last.high, price),
+                low: Math.min(last.low, price),
+                close: price
+            };
+        } else if (minuteTime > last.time) {
+            history.push({ time: minuteTime, open: last.close, high: price, low: price, close: price });
+            if (history.length > 500) history.shift();
+        }
+        return { candleHistory: history };
+    }),
     lastTickTime: 0,
     setLastTickTime: (t) => set({ lastTickTime: t }),
 

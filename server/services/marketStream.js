@@ -205,7 +205,7 @@ async function executeLiveOrder(userId, action, amount, price, productId, reason
             const fillSize = result.filledSize || amount;
             // Mirror into paper state for portfolio tracking
             const mirroredTrade = result.status === 'FILLED'
-                ? userStore.executePaperTrade(userId, action, fillSize, fillPrice, `[LIVE:${result.orderId}] ${reasoning}`)
+                ? userStore.executePaperTrade(userId, action, fillSize, fillPrice, `[LIVE:${result.orderId}] ${reasoning}`, productId)
                 : null;
             const tradePayload = {
                 type: action,
@@ -247,108 +247,206 @@ async function executeLiveOrder(userId, action, amount, price, productId, reason
 
 module.exports.executeLiveOrder = executeLiveOrder;
 
-function startUserStream(userId, broadcastFn, initialProduct) {
+// Execute a trade decision for a specific product
+async function executeTradeDecision(userId, productId, decision, price, history, broadcastFn) {
+    const user = userStore._ensureUser(userId);
+    const engine = userStore.getEngineState(userId);
+
+    // Apply AI's dynamic TP/SL (only for the selected product to keep settings simple)
+    if (productId === user.selectedProduct && (decision.take_profit_pct || decision.stop_loss_pct)) {
+        const rs = user.riskSettings;
+        if (decision.action === 'BUY') {
+            if (decision.take_profit_pct) rs.takeProfitPrice = price * (1 + (decision.take_profit_pct / 100));
+            if (decision.stop_loss_pct) rs.stopLossPrice = price * (1 - (decision.stop_loss_pct / 100));
+        } else if (decision.action === 'SELL') {
+            rs.takeProfitPrice = null;
+            rs.stopLossPrice = null;
+        }
+    }
+
+    const suggestedAmount = getSuggestedTradeSize(userId, price, productId);
+    const amountToTrade = decision.position_size_override
+        ? Math.min(decision.position_size_override, suggestedAmount * 2)
+        : suggestedAmount;
+
+    const riskCheck = checkTradeAllowed(userId, decision.action, amountToTrade, price, history, productId);
+
+    if (!riskCheck.allowed) {
+        broadcastFn('AI_STATUS', `[${productId}] Risk block: ${riskCheck.reason}`);
+        return;
+    }
+
+    const finalAmount = riskCheck.adjustedAmount || amountToTrade;
+
+    // Don't overwrite a pending trade the user hasn't responded to yet
+    const existingPending = userStore.getPendingTrade(userId);
+    if (existingPending && Date.now() < existingPending.expiresAt) {
+        broadcastFn('AI_STATUS', `${productId}: ${decision.action} signal — awaiting your response to previous trade first`);
+        return;
+    }
+
+    if (engine.engineStatus === 'LIVE_RUNNING') {
+        const pendingTrade = buildPendingTrade(decision.action, finalAmount, price, productId, decision.reasoning, decision.confidence, decision.signals, true, decision.agentConsensus);
+        userStore.setPendingTrade(userId, pendingTrade);
+        broadcastFn('PENDING_TRADE', pendingTrade);
+        broadcastFn('AI_STATUS', `Live Assisted: awaiting confirmation for ${decision.action} ${productId}`);
+    } else if (user.tradingMode === 'AI_ASSISTED') {
+        const pendingTrade = buildPendingTrade(decision.action, finalAmount, price, productId, decision.reasoning, decision.confidence, decision.signals, false, decision.agentConsensus);
+        userStore.setPendingTrade(userId, pendingTrade);
+        broadcastFn('PENDING_TRADE', pendingTrade);
+        broadcastFn('AI_STATUS', `Awaiting confirmation: ${decision.action} ${productId}`);
+    } else {
+        // Full Auto paper execution
+        const executed = userStore.executePaperTrade(userId, decision.action, finalAmount, price, decision.reasoning, productId);
+        if (executed) {
+            broadcastFn('TRADE_EXEC', executed);
+            broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
+            if (decision.action === 'BUY') {
+                openPosition(userId, productId, finalAmount, price, defaultTpConfig(user.riskSettings));
+            } else if (decision.action === 'SELL') {
+                closePosition(userId, productId);
+            }
+        }
+    }
+}
+
+function startUserStream(userId, broadcastFn, initialProduct, initialWatchlist) {
     ensureMarketConnection();
 
-    let activeProduct = initialProduct || userStore.getSelectedProduct(userId) || 'BTC-USD';
+    let selectedProduct = initialProduct || userStore.getSelectedProduct(userId) || 'BTC-USD';
+    let watchlist = initialWatchlist || userStore.getWatchlist(userId);
+
+    // Per-product eval timers: Map<productId, lastEvalTimestamp>
+    const evalTimers = new Map();
+    // Throttle kill switch alerts — only re-broadcast every 60s, not every 2s tick
+    let lastKillAlertTime = 0;
+
+    const subscribeProduct = (productId) => {
+        if (!SUPPORTED_PRODUCTS.includes(productId) && marketWs && marketWs.readyState === WebSocket.OPEN) {
+            marketWs.send(JSON.stringify({ type: 'subscribe', product_ids: [productId], channels: ['ticker'] }));
+            SUPPORTED_PRODUCTS.push(productId);
+        }
+    };
+
+    const seedProduct = (productId) => {
+        return fetchHistoricalCandles(productId).then(candles => {
+            if (candles.length > 0) {
+                const data = getProductData(productId);
+                data.candles = [...candles];
+                const closes = candles.slice(-100).map(c => c.value);
+                data.history = closes;
+                data.price = closes[closes.length - 1];
+                if (productId === selectedProduct) {
+                    broadcastFn('CANDLE_HISTORY', candles);
+                }
+            }
+        }).catch(() => {});
+    };
 
     const setProduct = async (productId) => {
         if (!(await isSupportedProduct(productId))) {
             broadcastFn('AI_STATUS', `Unsupported Coinbase USD spot product: ${productId}`);
             return false;
         }
-        activeProduct = productId;
+        selectedProduct = productId;
         userStore.setSelectedProduct(userId, productId);
-        // If this product isn't in our subscription list, subscribe to it now
-        if (!SUPPORTED_PRODUCTS.includes(productId) && marketWs && marketWs.readyState === WebSocket.OPEN) {
-            marketWs.send(JSON.stringify({
-                type: 'subscribe',
-                product_ids: [productId],
-                channels: ['ticker']
-            }));
-            // Register it for future reconnects
-            SUPPORTED_PRODUCTS.push(productId);
+        subscribeProduct(productId);
+        // Add to watchlist if not already there
+        const wl = userStore.getWatchlist(userId);
+        if (!wl.includes(productId)) {
+            userStore.setWatchlist(userId, [productId, ...wl].slice(0, 10));
+            watchlist = userStore.getWatchlist(userId);
         }
-        // Send historical candles for the new product
-        fetchHistoricalCandles(productId).then(candles => {
-            if (candles.length > 0) {
-                broadcastFn('CANDLE_HISTORY', candles);
-                // Seed the candles for AI evaluation
-                const data = getProductData(productId);
-                data.candles = [...candles];
-                const closes = candles.slice(-100).map(c => c.value);
-                data.history = closes;
-                data.price = closes[closes.length - 1];
-            }
-        }).catch(() => {});
+        await seedProduct(productId);
         return true;
     };
 
-    let lastAiEvalTime = 0;
-    setProduct(activeProduct).then(() => broadcastEngineState(userId, broadcastFn));
+    const setWatchlist = (products) => {
+        userStore.setWatchlist(userId, products);
+        watchlist = userStore.getWatchlist(userId);
+        // Seed any new products
+        for (const p of watchlist) {
+            subscribeProduct(p);
+            const data = getProductData(p);
+            if (data.price <= 0 && data.candles.length === 0) {
+                seedProduct(p);
+            }
+        }
+    };
+
+    // Seed all watchlist products on startup
+    for (const p of watchlist) {
+        subscribeProduct(p);
+        seedProduct(p);
+    }
+    setProduct(selectedProduct).then(() => broadcastEngineState(userId, broadcastFn));
 
     const interval = setInterval(async () => {
-        const data = getProductData(activeProduct);
+        const data = getProductData(selectedProduct);
         if (data.price <= 0) return;
 
+        // Broadcast TICK for the chart display product
         broadcastFn('TICK', {
             price: data.price,
-            product: activeProduct,
+            product: selectedProduct,
             time: new Date().toLocaleTimeString()
         });
 
-        // Send live prices for all held products so Portfolio page shows multi-asset P&L
+        // Broadcast live prices for ALL watchlist products (sidebar + portfolio P&L)
+        const allPrices = {};
+        for (const p of watchlist) {
+            const pData = getProductData(p);
+            if (pData.price > 0) allPrices[p] = pData.price;
+        }
+        // Also include any held products not in watchlist
         const userHoldings = userStore._ensureUser(userId).productHoldings;
-        const heldProducts = Object.keys(userHoldings).filter(p =>
-            p !== activeProduct && (userHoldings[p]?.assetHoldings || 0) > 0
-        );
-        if (heldProducts.length > 0) {
-            const holdingPrices = {};
-            for (const p of heldProducts) {
+        for (const p of Object.keys(userHoldings)) {
+            if ((userHoldings[p]?.assetHoldings || 0) > 0) {
                 const pData = getProductData(p);
-                if (pData.price > 0) holdingPrices[p] = pData.price;
+                if (pData.price > 0) allPrices[p] = pData.price;
+                // Update last known price for portfolio valuation
+                if (userHoldings[p]) userHoldings[p]._lastPrice = pData.price;
             }
-            if (Object.keys(holdingPrices).length > 0) {
-                broadcastFn('HOLDINGS_PRICES', holdingPrices);
-            }
+        }
+        if (Object.keys(allPrices).length > 0) {
+            broadcastFn('HOLDINGS_PRICES', allPrices);
         }
 
         const user = userStore._ensureUser(userId);
         const engine = userStore.getEngineState(userId);
 
-        // SmartTrade: check multi-TP and trailing stop on every tick
+        // SmartTrade: check multi-TP / trailing stop for selected product on every tick
         if (engine.engineStatus !== 'STOPPED') {
-            checkPositions(userId, activeProduct, data.price,
-                (amount, price, reason) => {
-                    // Re-read engine state fresh — user may have toggled since interval started
-                    const currentEngine = userStore.getEngineState(userId);
-                    if (currentEngine.engineStatus === 'LIVE_RUNNING') {
-                        // Queue as pending trade for live confirmation
-                        const pendingTrade = buildPendingTrade('SELL', amount, price, activeProduct, reason, 100, null, true);
-                        userStore.setPendingTrade(userId, pendingTrade);
-                        broadcastFn('PENDING_TRADE', pendingTrade);
-                        return { amount, price, product: activeProduct, reason };
-                    } else {
-                        const executed = userStore.executePaperTrade(userId, 'SELL', amount, price, reason);
-                        if (executed) {
-                            broadcastFn('TRADE_EXEC', executed);
-                            broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
-                        }
-                        return executed;
+            checkPositions(userId, selectedProduct, data.price, (amount, price, reason) => {
+                const currentEngine = userStore.getEngineState(userId);
+                if (currentEngine.engineStatus === 'LIVE_RUNNING') {
+                    const pt = buildPendingTrade('SELL', amount, price, selectedProduct, reason, 100, null, true);
+                    userStore.setPendingTrade(userId, pt);
+                    broadcastFn('PENDING_TRADE', pt);
+                    return { amount, price, product: selectedProduct, reason };
+                } else {
+                    const executed = userStore.executePaperTrade(userId, 'SELL', amount, price, reason, selectedProduct);
+                    if (executed) {
+                        broadcastFn('TRADE_EXEC', executed);
+                        broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
                     }
-                },
-                broadcastFn
-            );
+                    return executed;
+                }
+            }, broadcastFn);
         }
 
         if (user.killSwitch || user.circuitBreaker.tripped) {
             const reason = user.killSwitchReason || user.circuitBreaker.reason;
-            broadcastFn('KILL_SWITCH_ALERT', { reason });
+            // Only re-broadcast the alert every 60s — not every 2s tick
+            if (now - lastKillAlertTime > 60000) {
+                broadcastFn('KILL_SWITCH_ALERT', { reason });
+                lastKillAlertTime = now;
+            }
             broadcastFn('AI_STATUS', `🛑 Halted: ${reason}`);
             return;
         }
 
-        // Check absolute price targets (stop-loss / take-profit) every tick
+        // Check absolute SL/TP for selected product
         const rsCheck = user.riskSettings;
         const stateCheck = user.paperTradingState;
         if (engine.engineStatus !== 'STOPPED' && stateCheck.assetHoldings > 0) {
@@ -356,29 +454,23 @@ function startUserStream(userId, broadcastFn, initialProduct) {
                 broadcastFn('AI_STATUS', `🔴 STOP-LOSS triggered at $${data.price.toLocaleString()} (target: $${rsCheck.stopLossPrice.toLocaleString()})`);
                 const reason = `[STOP-LOSS] Price $${data.price.toLocaleString()} hit target $${rsCheck.stopLossPrice.toLocaleString()}`;
                 if (engine.engineStatus === 'LIVE_RUNNING') {
-                    const pendingTrade = buildPendingTrade('SELL', stateCheck.assetHoldings, data.price, activeProduct, reason, 100, null, true);
-                    userStore.setPendingTrade(userId, pendingTrade);
-                    broadcastFn('PENDING_TRADE', pendingTrade);
+                    const pt = buildPendingTrade('SELL', stateCheck.assetHoldings, data.price, selectedProduct, reason, 100, null, true);
+                    userStore.setPendingTrade(userId, pt);
+                    broadcastFn('PENDING_TRADE', pt);
                 } else {
-                    const executed = userStore.executePaperTrade(userId, 'SELL', stateCheck.assetHoldings, data.price, reason);
-                    if (executed) {
-                        broadcastFn('TRADE_EXEC', executed);
-                        broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
-                    }
+                    const executed = userStore.executePaperTrade(userId, 'SELL', stateCheck.assetHoldings, data.price, reason, selectedProduct);
+                    if (executed) { broadcastFn('TRADE_EXEC', executed); broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]); }
                 }
             } else if (rsCheck.takeProfitPrice && data.price >= rsCheck.takeProfitPrice) {
                 broadcastFn('AI_STATUS', `🟢 TAKE-PROFIT triggered at $${data.price.toLocaleString()} (target: $${rsCheck.takeProfitPrice.toLocaleString()})`);
                 const reason = `[TAKE-PROFIT] Price $${data.price.toLocaleString()} hit target $${rsCheck.takeProfitPrice.toLocaleString()}`;
                 if (engine.engineStatus === 'LIVE_RUNNING') {
-                    const pendingTrade = buildPendingTrade('SELL', stateCheck.assetHoldings, data.price, activeProduct, reason, 100, null, true);
-                    userStore.setPendingTrade(userId, pendingTrade);
-                    broadcastFn('PENDING_TRADE', pendingTrade);
+                    const pt = buildPendingTrade('SELL', stateCheck.assetHoldings, data.price, selectedProduct, reason, 100, null, true);
+                    userStore.setPendingTrade(userId, pt);
+                    broadcastFn('PENDING_TRADE', pt);
                 } else {
-                    const executed = userStore.executePaperTrade(userId, 'SELL', stateCheck.assetHoldings, data.price, reason);
-                    if (executed) {
-                        broadcastFn('TRADE_EXEC', executed);
-                        broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
-                    }
+                    const executed = userStore.executePaperTrade(userId, 'SELL', stateCheck.assetHoldings, data.price, reason, selectedProduct);
+                    if (executed) { broadcastFn('TRADE_EXEC', executed); broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]); }
                 }
             }
         }
@@ -386,139 +478,81 @@ function startUserStream(userId, broadcastFn, initialProduct) {
         const now = Date.now();
 
         if (engine.engineStatus === 'STOPPED') {
-            // Don't run AI evaluations when engine is stopped
-            // Only broadcast status occasionally (every 10s) to avoid flooding client
             if (now % 10000 < 2200) {
-                broadcastFn('AI_STATUS', `Engine paused — click PAPER to start trading ${activeProduct}`);
+                broadcastFn('AI_STATUS', `Engine paused — click PAPER to start trading`);
             }
-        } else if (data.candles.length < 5) {
-            broadcastFn('AI_STATUS', `Warming up — collecting candles (${data.candles.length}/5)…`);
-        } else if (now - lastAiEvalTime > 30000) {
-            lastAiEvalTime = now;
-            broadcastFn('AI_STATUS', `Analyzing ${activeProduct} market structure…`);
+            return;
+        }
 
-            const decision = await evaluateMarketSignal(userId, [...data.candles], activeProduct);
+        // ── Multi-product AI evaluation loop ────────────────────────────────
+        // Evaluate all watchlist products whose timer has expired (15s per product)
+        const EVAL_INTERVAL_MS = 15000;
+        const productsToEval = watchlist.filter(p => {
+            const pData = getProductData(p);
+            if (pData.candles.length < 5) return false;
+            const lastEval = evalTimers.get(p) || 0;
+            return now - lastEval > EVAL_INTERVAL_MS;
+        });
 
-            if (!decision) {
-                broadcastFn('AI_STATUS', `⚠️ AI eval failed for ${activeProduct} — check server logs`);
-                return;
+        if (productsToEval.length === 0) {
+            // Show warmup if the chart product is still loading
+            const selData = getProductData(selectedProduct);
+            if (selData.candles.length < 5) {
+                broadcastFn('AI_STATUS', `Warming up — collecting candles (${selData.candles.length}/5)…`);
             }
+            return;
+        }
 
-            // Build agent vote summary for the status message
+        // Mark eval times immediately to prevent re-entry during async eval
+        for (const p of productsToEval) evalTimers.set(p, now);
+
+        broadcastFn('AI_STATUS', `Analyzing ${productsToEval.join(', ')}…`);
+
+        // Run all product evals in parallel
+        const evalResults = await Promise.allSettled(
+            productsToEval.map(async (productId) => {
+                const pData = getProductData(productId);
+                const decision = await evaluateMarketSignal(userId, [...pData.candles], productId);
+                return { productId, decision, price: pData.price, history: pData.history };
+            })
+        );
+
+        let statusParts = [];
+        for (const result of evalResults) {
+            if (result.status === 'rejected' || !result.value?.decision) {
+                const pid = result.value?.productId || '?';
+                console.warn(`AI eval failed for ${pid}:`, result.reason?.message);
+                continue;
+            }
+            const { productId, decision, price: evalPrice, history: evalHistory } = result.value;
             const voteStr = decision.agentVotes
-                ? `[${decision.agentVotes.filter(v => v.agentId !== 'COMBINED').map(v => `${v.name}:${v.signal}`).join(' ')}]`
+                ? `[${decision.agentVotes.filter(v => v.agentId !== 'COMBINED').map(v => `${v.name}:${v.signal[0]}`).join('')}]`
                 : '';
-            broadcastFn('AI_STATUS', `${activeProduct}: ${decision.action} | Confidence ${decision.confidence}% ${voteStr}${decision.action === 'HOLD' ? ' — holding' : ''}`);
-            broadcastFn('AI_THESIS', decision.reasoning);
-            broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
+            statusParts.push(`${productId}: ${decision.action}(${decision.confidence}%) ${voteStr}`);
+
+            // Emit per-product signal for watchlist sidebar dot indicator
+            broadcastFn('PRODUCT_SIGNAL', { product: productId, action: decision.action, confidence: decision.confidence });
+
+            if (productId === selectedProduct) {
+                broadcastFn('AI_THESIS', decision.reasoning);
+            }
 
             const minConfidence = engine.engineStatus === 'LIVE_RUNNING' ? 80 : 65;
-            if (decision && decision.action !== 'HOLD' && decision.confidence >= minConfidence) {
-                if (engine.engineStatus === 'STOPPED') {
-                    broadcastFn('AI_STATUS', `${activeProduct}: ${decision.action} signal observed; execution engine is stopped.`);
-                    return;
-                }
-
-                // LLM Agentic Risk Management: Apply AI's dynamic TP/SL
-                if (decision.take_profit_pct || decision.stop_loss_pct) {
-                    const rs = userStore._ensureUser(userId).riskSettings;
-                    if (decision.action === 'BUY') {
-                        if (decision.take_profit_pct) rs.takeProfitPrice = data.price * (1 + (decision.take_profit_pct / 100));
-                        if (decision.stop_loss_pct) rs.stopLossPrice = data.price * (1 - (decision.stop_loss_pct / 100));
-                    } else if (decision.action === 'SELL') {
-                        rs.takeProfitPrice = null; // Clear on sell
-                        rs.stopLossPrice = null;
-                    }
-                }
-
-                const suggestedAmount = getSuggestedTradeSize(userId, data.price);
-                // Clamp AI position size override to 2x suggested to prevent runaway orders
-                const amountToTrade = decision.position_size_override
-                    ? Math.min(decision.position_size_override, suggestedAmount * 2)
-                    : suggestedAmount;
-
-                const riskCheck = checkTradeAllowed(userId, decision.action, amountToTrade, data.price, data.history);
-
-                if (!riskCheck.allowed) {
-                    broadcastFn('AI_STATUS', `Risk block: ${riskCheck.reason}`);
-                    userStore.addNotification(userId, {
-                        type: 'AI_SIGNAL',
-                        title: `${decision.action} Blocked`,
-                        body: riskCheck.reason
-                    });
-                    broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
-                } else {
-                    const finalAmount = riskCheck.adjustedAmount || amountToTrade;
-                    const currentUser = userStore._ensureUser(userId);
-
-                    // Don't overwrite a pending trade the user hasn't responded to yet
-                    const existingPending = userStore.getPendingTrade(userId);
-                    if (existingPending && Date.now() < existingPending.expiresAt) {
-                        broadcastFn('AI_STATUS', `${activeProduct}: ${decision.action} signal — awaiting your response to previous trade first`);
-                        broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
-                        return;
-                    }
-
-                    if (currentUser.engineStatus === 'LIVE_RUNNING') {
-                        const pendingTrade = buildPendingTrade(
-                            decision.action,
-                            finalAmount,
-                            data.price,
-                            activeProduct,
-                            decision.reasoning,
-                            decision.confidence,
-                            decision.signals,
-                            true,
-                            decision.agentConsensus
-                        );
-                        userStore.setPendingTrade(userId, pendingTrade);
-                        broadcastFn('PENDING_TRADE', pendingTrade);
-                        broadcastFn('AI_STATUS', `Live Assisted: awaiting your confirmation for ${decision.action} ${activeProduct}`);
-                    } else if (currentUser.tradingMode === 'AI_ASSISTED') {
-                        const pendingTrade = buildPendingTrade(
-                            decision.action,
-                            finalAmount,
-                            data.price,
-                            activeProduct,
-                            decision.reasoning,
-                            decision.confidence,
-                            decision.signals,
-                            false,
-                            decision.agentConsensus
-                        );
-                        userStore.setPendingTrade(userId, pendingTrade);
-                        broadcastFn('PENDING_TRADE', pendingTrade);
-                        broadcastFn('AI_STATUS', `Awaiting your confirmation: ${decision.action} ${activeProduct}`);
-                    } else {
-                        // Paper Full Auto execution
-                        const executed = userStore.executePaperTrade(
-                            userId, decision.action, finalAmount, data.price, decision.reasoning
-                        );
-
-                        if (executed) {
-                            broadcastFn('TRADE_EXEC', executed);
-                            const notif = userStore.getNotifications(userId)[0];
-                            broadcastFn('NOTIFICATION', notif);
-                            // Register SmartTrade position tracking for BUY orders
-                            if (decision.action === 'BUY') {
-                                const tpConfig = defaultTpConfig(user.riskSettings);
-                                openPosition(userId, activeProduct, finalAmount, data.price, tpConfig);
-                            } else if (decision.action === 'SELL') {
-                                closePosition(userId, activeProduct);
-                            }
-                        }
-                    }
-                }
+            if (decision.action !== 'HOLD' && decision.confidence >= minConfidence && engine.engineStatus !== 'STOPPED') {
+                await executeTradeDecision(userId, productId, decision, evalPrice, evalHistory, broadcastFn);
             }
-
-            broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
-            // Keep the last AI decision visible — don't overwrite with a generic "Monitoring" message
         }
+
+        if (statusParts.length > 0) {
+            broadcastFn('AI_STATUS', statusParts.join(' | '));
+        }
+        broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
     }, 2000);
 
     return {
         cleanup: () => clearInterval(interval),
-        setProduct
+        setProduct,
+        setWatchlist
     };
 }
 
@@ -538,4 +572,4 @@ function buildPendingTrade(side, amount, price, product, reasoning, confidence, 
     };
 }
 
-module.exports = { startUserStream, ensureMarketConnection, executeLiveOrder, SUPPORTED_PRODUCTS };
+module.exports = { startUserStream, ensureMarketConnection, executeLiveOrder, SUPPORTED_PRODUCTS, getProductData };

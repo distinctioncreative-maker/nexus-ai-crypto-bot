@@ -22,6 +22,11 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_SECRET || (
 );
 const ENGINE_STATUSES = ['STOPPED', 'PAPER_RUNNING', 'LIVE_RUNNING'];
 
+// Realistic paper trading friction (matches Coinbase Advanced Trade fees)
+const PAPER_TAKER_FEE = 0.006;  // 0.6% taker fee
+const PAPER_SLIPPAGE  = 0.001;  // 0.1% market impact
+const PAPER_FRICTION  = PAPER_TAKER_FEE + PAPER_SLIPPAGE; // 0.7% total per side
+
 class UserStore {
     constructor() {
         // Map<userId, UserState>
@@ -36,6 +41,7 @@ class UserStore {
                     coinbaseApiSecret: null,
                 },
                 selectedProduct: 'BTC-USD',
+                watchlist: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD'],
                 tradingMode: 'FULL_AUTO',
                 isLiveMode: false,
                 engineStatus: 'PAPER_RUNNING',
@@ -86,7 +92,7 @@ class UserStore {
                 productHoldings: {},
                 circuitBreaker: {
                     tripped: false,
-                    maxDrawdownPercent: 5.0,
+                    maxDrawdownPercent: 20.0,
                     reason: ''
                 }
             });
@@ -119,9 +125,22 @@ class UserStore {
 
     getPaperState(userId) {
         const user = this._ensureUser(userId);
+        // Merge trades from all products for the full trade feed
+        const allTrades = [...user.paperTradingState.trades];
+        for (const [prod, held] of Object.entries(user.productHoldings)) {
+            if (prod === user.selectedProduct) continue;
+            if (Array.isArray(held?.trades)) {
+                for (const t of held.trades) {
+                    if (!allTrades.find(x => x.id === t.id)) allTrades.push(t);
+                }
+            }
+        }
+        allTrades.sort((a, b) => new Date(b.time) - new Date(a.time));
         return {
             ...user.paperTradingState,
+            trades: allTrades.slice(0, 500),
             selectedProduct: user.selectedProduct,
+            watchlist: user.watchlist,
             circuitBreaker: user.circuitBreaker,
             tradingMode: user.tradingMode,
             isLiveMode: user.isLiveMode,
@@ -132,6 +151,22 @@ class UserStore {
             dailyStats: user.dailyStats,
             productHoldings: user.productHoldings
         };
+    }
+
+    getWatchlist(userId) {
+        const user = this._ensureUser(userId);
+        return user.watchlist || ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'XRP-USD'];
+    }
+
+    setWatchlist(userId, products) {
+        const user = this._ensureUser(userId);
+        const valid = Array.isArray(products) ? products.slice(0, 10) : user.watchlist;
+        user.watchlist = valid;
+        // Always ensure selectedProduct is in watchlist
+        if (!valid.includes(user.selectedProduct)) {
+            user.watchlist.unshift(user.selectedProduct);
+            if (user.watchlist.length > 10) user.watchlist.pop();
+        }
     }
 
     getSelectedProduct(userId) {
@@ -297,39 +332,89 @@ class UserStore {
         return false;
     }
 
-    executePaperTrade(userId, type, amount, price, reason) {
+    executePaperTrade(userId, type, amount, price, reason, productOverride) {
         const user = this._ensureUser(userId);
         if (this.checkCircuitBreaker(userId, price)) return false;
 
+        const product = productOverride || user.selectedProduct;
         const cost = amount * price;
-        if (type === 'BUY' && user.paperTradingState.balance >= cost) {
-            user.paperTradingState.balance -= cost;
-            user.paperTradingState.assetHoldings += amount;
-        } else if (type === 'SELL' && user.paperTradingState.assetHoldings >= amount) {
-            user.paperTradingState.balance += cost;
-            user.paperTradingState.assetHoldings -= amount;
+
+        // Get per-product holdings (or fall back to main state for selected product)
+        let productState;
+        if (product === user.selectedProduct) {
+            productState = user.paperTradingState;
+        } else {
+            if (!user.productHoldings[product]) {
+                user.productHoldings[product] = { assetHoldings: 0, trades: [], _lastPrice: price };
+            }
+            productState = user.productHoldings[product];
+            // Share the cash balance across products
+            productState.balance = user.paperTradingState.balance;
+        }
+
+        // Apply realistic fee + slippage simulation
+        // BUY: entry price is slightly worse (slippage), total cost includes taker fee
+        // SELL: exit price is slightly worse (slippage), net proceeds minus taker fee
+        const fillPrice = type === 'BUY'
+            ? price * (1 + PAPER_SLIPPAGE)   // filled a bit above mid
+            : price * (1 - PAPER_SLIPPAGE);  // filled a bit below mid
+        const fillCost = amount * fillPrice;
+        const feePaid = fillCost * PAPER_TAKER_FEE;
+
+        if (type === 'BUY') {
+            const totalCost = fillCost + feePaid;
+            if (user.paperTradingState.balance < totalCost) return false;
+            user.paperTradingState.balance -= totalCost;
+            productState.assetHoldings += amount;
+        } else if (type === 'SELL' && productState.assetHoldings >= amount) {
+            const netProceeds = fillCost - feePaid;
+            user.paperTradingState.balance += netProceeds;
+            productState.assetHoldings -= amount;
         } else {
             return false;
+        }
+
+        // Keep last known price for portfolio valuation
+        if (product !== user.selectedProduct) {
+            user.productHoldings[product]._lastPrice = price;
         }
 
         const trade = {
             id: Date.now(),
             type,
             amount,
-            price,
+            price: fillPrice,   // realistic fill price includes slippage
+            fee: feePaid,
             time: new Date().toISOString(),
             reason,
-            product: user.selectedProduct
+            product
         };
 
-        user.paperTradingState.trades.unshift(trade);
-        if (user.paperTradingState.trades.length > 500) user.paperTradingState.trades.pop();
+        if (!productState.trades) productState.trades = [];
+        productState.trades.unshift(trade);
+        if (productState.trades.length > 500) productState.trades.pop();
 
-        // Sync per-product holdings map
-        user.productHoldings[user.selectedProduct] = {
-            assetHoldings: user.paperTradingState.assetHoldings,
-            trades: [...user.paperTradingState.trades]
-        };
+        // For selected product, also keep main state in sync
+        if (product === user.selectedProduct) {
+            // already updated above
+        } else {
+            // Sync balance back to productState reference
+            user.productHoldings[product] = {
+                ...user.productHoldings[product],
+                assetHoldings: productState.assetHoldings,
+                trades: productState.trades,
+                _lastPrice: price
+            };
+        }
+
+        // Sync per-product holdings map for selected product (only if this trade is for it)
+        if (product === user.selectedProduct) {
+            user.productHoldings[user.selectedProduct] = {
+                assetHoldings: user.paperTradingState.assetHoldings,
+                trades: [...user.paperTradingState.trades],
+                _lastPrice: price
+            };
+        }
 
         // Persist trade to Supabase (fire-and-forget)
         getPersistence().saveTrade(getSupabase(), userId, trade).catch(error => console.warn('saveTrade failed:', error.message));
@@ -337,7 +422,7 @@ class UserStore {
         this.addNotification(userId, {
             type: 'TRADE_EXECUTED',
             title: `${type} Executed`,
-            body: `${amount.toFixed(6)} ${user.selectedProduct} @ $${price.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+            body: `${amount.toFixed(6)} ${product} @ $${price.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
         });
 
         // Track realized P&L: positive when selling (gain), negative when buying (cost)
@@ -347,26 +432,31 @@ class UserStore {
         // Phase 3 LLM Self-Learning: Trigger Autopsy on Sell
         if (type === 'SELL') {
             // Find the most recent buy for this product
-            const lastBuy = user.paperTradingState.trades.find(t => t.type === 'BUY' && t.product === user.selectedProduct);
+            const tradesArr = productState.trades || user.paperTradingState.trades;
+            const lastBuy = tradesArr.find(t => t.type === 'BUY' && t.product === product);
             if (lastBuy) {
                 const entryPrice = lastBuy.price;
                 const pnlPct = ((price - entryPrice) / entryPrice) * 100;
-                
+
                 // Fire and forget the LLM autopsy
                 setTimeout(() => {
                     const { performAutopsy } = require('./services/aiEngine');
-                    performAutopsy(userId, user.selectedProduct, entryPrice, price, pnlPct)
+                    performAutopsy(userId, product, entryPrice, price, pnlPct)
                         .then(lesson => {
                             if (lesson) this.recordLearning(userId, lesson);
                         }).catch(err => console.error('Autopsy background error:', err.message));
-                }, 500); // Slight delay so it doesn't block the trade execution path
+                }, 500);
             }
         }
+
+        const newAssetHoldings = product === user.selectedProduct
+            ? user.paperTradingState.assetHoldings
+            : (user.productHoldings[product]?.assetHoldings ?? 0);
 
         return {
             ...trade,
             newBalance: user.paperTradingState.balance,
-            newAssetHoldings: user.paperTradingState.assetHoldings
+            newAssetHoldings
         };
     }
 
@@ -381,6 +471,14 @@ class UserStore {
         }
         // Persist learning record (fire-and-forget)
         getPersistence().saveLearning(getSupabase(), userId, lesson).catch(error => console.warn('saveLearning failed:', error.message));
+    }
+
+    getProductAssetHoldings(userId, productId) {
+        const user = this._ensureUser(userId);
+        if (productId === user.selectedProduct) {
+            return user.paperTradingState.assetHoldings;
+        }
+        return user.productHoldings[productId]?.assetHoldings ?? 0;
     }
 
     // Encryption helpers for persisting keys to Supabase
@@ -430,6 +528,10 @@ class UserStore {
         }
         if (loaded.circuitBreaker && Object.keys(loaded.circuitBreaker).length > 0) {
             Object.assign(user.circuitBreaker, loaded.circuitBreaker);
+            // Always clear tripped state on restore — stale circuit breaker should not
+            // halt the engine immediately on reconnect. Will re-trip if conditions warrant.
+            user.circuitBreaker.tripped = false;
+            user.circuitBreaker.reason = '';
         }
         if (Array.isArray(loaded.strategies) && loaded.strategies.length > 0) {
             user.strategies = loaded.strategies;

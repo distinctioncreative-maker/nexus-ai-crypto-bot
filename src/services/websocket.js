@@ -33,6 +33,7 @@ export const initWebSocket = async () => {
                 });
                 store.setCurrentPrice(message.payload.price);
                 store.setLastTickTime(Date.now());
+                store.updateLiveCandle(message.payload.price);
                 // Track price per product so Portfolio can show P&L for selected product
                 if (message.payload.product) {
                     store.updateProductPrices({ [message.payload.product]: message.payload.price });
@@ -62,11 +63,31 @@ export const initWebSocket = async () => {
                 if (message.payload.productHoldings) {
                     store.setProductHoldings(message.payload.productHoldings);
                 }
+                if (Array.isArray(message.payload.watchlist)) {
+                    store.setWatchlist(message.payload.watchlist);
+                }
+                break;
+
+            case 'PRODUCT_SIGNAL':
+                if (message.payload?.product) {
+                    store.setProductSignal(message.payload.product, {
+                        action: message.payload.action,
+                        confidence: message.payload.confidence
+                    });
+                }
                 break;
 
             case 'CANDLE_HISTORY':
                 if (Array.isArray(message.payload) && message.payload.length > 0) {
                     store.setMarketHistory(message.payload);
+                    // Also populate candlestick history with full OHLCV
+                    store.setCandleHistory(message.payload.map(c => ({
+                        time: c.time,
+                        open: c.open ?? c.value,
+                        high: c.high ?? c.value,
+                        low: c.low ?? c.value,
+                        close: c.value
+                    })));
                 }
                 break;
 
@@ -215,4 +236,11 @@ export const sendEngineStatusChange = (engineStatus) => {
         ws.send(JSON.stringify({ type: 'SET_ENGINE_STATUS', payload: { engineStatus } }));
     }
     useStore.getState().setEngineStatus(engineStatus);
+};
+
+export const sendWatchlistUpdate = (products) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'SET_WATCHLIST', payload: { products } }));
+    }
+    useStore.getState().setWatchlist(products);
 };

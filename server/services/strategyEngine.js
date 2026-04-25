@@ -8,6 +8,18 @@
 
 const userStore = require('../userStore');
 
+// Lazy-loaded persistence helpers (same pattern as userStore.js to avoid circular deps)
+let _supabase = null;
+let _persistence = null;
+function getSupabase() {
+    if (!_supabase) _supabase = require('../middleware/auth').supabase;
+    return _supabase;
+}
+function getPersistence() {
+    if (!_persistence) _persistence = require('../db/persistence');
+    return _persistence;
+}
+
 // ─── Technical Helpers ──────────────────────────────────────────────────────
 
 function sma(prices, period) {
@@ -329,7 +341,7 @@ function updateAgentSharpe(strategy) {
     if (trades.length < 3) return;
     const returns = trades.map(t => t.pnlPct);
     const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
-    const variance = returns.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / returns.length;
+    const variance = returns.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / (returns.length - 1); // sample variance
     const stdDev = Math.sqrt(variance);
     strategy.sharpe = stdDev > 0 ? avg / stdDev : 0;
 }
@@ -374,6 +386,10 @@ function runTournamentCycle(userId) {
         sum + (s.shadowPortfolio?.closedTrades?.length || 0), 0);
 
     console.log(`🏆 Tournament cycle: ${ranked.map(s => `${s.name}(${(s.sharpe || 0).toFixed(2)})`).join(' > ')}`);
+
+    // Persist strategy state after tournament mutation (fire-and-forget)
+    getPersistence().saveStrategies(getSupabase(), userId, strategies)
+        .catch(err => console.warn('saveStrategies (tournament) failed:', err.message));
 }
 
 function mutatePameters(params) {
@@ -407,6 +423,9 @@ function recordAgentLesson(userId, agentId, lesson) {
     if (!strategy.lessons) strategy.lessons = [];
     strategy.lessons.unshift({ lesson, time: new Date().toISOString() });
     if (strategy.lessons.length > 10) strategy.lessons.pop();
+    // Persist updated strategy data (fire-and-forget)
+    getPersistence().saveStrategies(getSupabase(), userId, user.strategies || [])
+        .catch(err => console.warn('saveStrategies (lesson) failed:', err.message));
 }
 
 module.exports = {
