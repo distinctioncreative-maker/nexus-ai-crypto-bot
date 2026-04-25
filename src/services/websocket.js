@@ -199,11 +199,11 @@ export const sendTradingModeChange = (mode) => {
     }
 };
 
-export const sendSituationRoomQuery = (message, onAgent, onDone) => {
+export const sendSituationRoomQuery = (message, history, onAgent, onDone) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws._situationRoomOnAgent = onAgent;
         ws._situationRoomOnDone = onDone;
-        ws.send(JSON.stringify({ type: 'SITUATION_ROOM_QUERY', payload: { message } }));
+        ws.send(JSON.stringify({ type: 'SITUATION_ROOM_QUERY', payload: { message, history: history || [] } }));
     } else {
         onAgent('ERROR', 'System', 'Error', '#ff453a', 'WebSocket not connected. Try refreshing the page.');
         onDone();

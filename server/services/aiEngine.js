@@ -1,6 +1,7 @@
 const userStore = require('../userStore');
 const axios = require('axios');
 const { getSignals } = require('./signalEngine');
+const { getAgentConsensus, tickShadowPortfolios, recordAgentLesson } = require('./strategyEngine');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
@@ -89,6 +90,30 @@ async function evaluateMarketSignal(userId, candles, productId) {
         ? `\n=== RECENT NEWS (top 3 headlines) ===\n${topHeadlines}\n`
         : '';
 
+    // ── Agent Consensus (algorithmic, zero API cost) ──────────────────────────
+    const { votes, orion: consensusResult } = getAgentConsensus(userId, candles, signals);
+    // Also tick shadow portfolios (non-blocking)
+    try { tickShadowPortfolios(userId, candles, signals); } catch {}
+
+    const voteDebate = votes.filter(v => v.agentId !== 'COMBINED').map(v =>
+        `${v.name}(${v.agentId.split('_')[0]}): ${v.signal} — ${v.reason}`
+    ).join('\n');
+    const agentDebateSection = `\n=== 5-AGENT ALGORITHMIC DEBATE ===
+${voteDebate}
+AGENT CONSENSUS: ${consensusResult.signal} (${consensusResult.consensus}, dissent=${(Number(consensusResult.dissent)*100).toFixed(0)}%)
+Buy votes: ${consensusResult.buyCount} | Sell votes: ${consensusResult.sellCount} | Hold votes: ${consensusResult.holdCount}
+`;
+
+    // Per-agent learned lessons injected per-agent
+    const user = userStore._ensureUser(userId);
+    const agentLessons = (user.strategies || [])
+        .filter(s => s.lessons?.length > 0)
+        .map(s => `${s.name}: ${s.lessons.slice(0, 2).map(l => l.lesson).join('; ')}`)
+        .join('\n');
+    const agentLessonsSection = agentLessons
+        ? `\n=== AGENT SELF-LEARNED RULES ===\n${agentLessons}\n`
+        : '';
+
     const systemInstruction = 'You are an elite quantitative trading JSON API. Only output valid JSON with exactly these fields: action (string: BUY, SELL, or HOLD), reasoning (string), confidence (integer 0-100), take_profit_pct (number or null), stop_loss_pct (number or null), position_size_override (number or null), lesson_learned (string).';
 
     const recentCandles = candles.slice(-20).map(c => {
@@ -100,35 +125,37 @@ async function evaluateMarketSignal(userId, candles, productId) {
         return `[T:${t}] ${o}${h}${l}C:$${Number(c.value).toFixed(2)}${vol}`;
     });
 
-    const prompt = `You are the Quant AI trading engine managing a paper trading portfolio.
+    const prompt = `You are the Quant AI Chief Strategist (Orion) synthesizing input from 4 specialist agents.
 
 === PORTFOLIO STATE ===
 Balance: $${state.balance.toFixed(2)}
 ${baseAsset} Holdings: ${state.assetHoldings} units (worth $${(state.assetHoldings * currentPrice).toFixed(2)})
 Total Portfolio Value: $${totalValue.toFixed(2)}
 Current Drawdown: ${drawdownPct.toFixed(2)}%
-
+${agentDebateSection}
 === MARKET SIGNALS ===
 Asset: ${product}
 Current Price: $${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-Recent Price Action (Last 20 minutes):
+Recent Price Action (Last 20 candles):
 ${recentCandles.join('\n')}
 
 Fear & Greed Index: ${fearGreedStr}
 DeFi TVL 7d Change: ${tvlStr}
 Polymarket BTC Bull Probability: ${polyStr}
-
-${newsContext}
+Composite Score: ${compositeStr}
+${newsContext}${agentLessonsSection}
 === RISK CONTEXT ===
 Daily P&L today: $${dailyPnl.toFixed(2)}
 Daily loss limit remaining: ${dailyLimitRemaining.toFixed(2)}%
 Circuit breaker: ${state.circuitBreaker?.tripped ? 'TRIPPED — ' + state.circuitBreaker.reason : 'Active'}
 
-=== LEARNED RULES (from past performance) ===
-${memoryContext || `First analysis for ${product}. Focus on momentum and mean-reversion rules.`}
+=== PORTFOLIO MEMORY ===
+${memoryContext || `First analysis for ${product}. Establish baseline rules.`}
 
-Given ALL signals above, what is your decision for ${baseAsset}?
-Determine your action ('BUY', 'SELL', or 'HOLD'). Decide on a logic-backed 'take_profit_pct' (e.g. 5.5) and 'stop_loss_pct' (e.g. 2.0). Provide solid 'reasoning' and 'confidence'.
+The 4 specialist agents have voted algorithmically above. As Chief Strategist, review their debate and ALL market signals.
+- Weight votes by agent consensus strength
+- Override only if macro/news data strongly contradicts algorithmic signals
+- Provide a final decision with clear reasoning citing which agents you agree or disagree with.
 Respond with JSON only.`;
 
     try {
@@ -137,15 +164,15 @@ Respond with JSON only.`;
         const finalAction = ['BUY', 'SELL', 'HOLD'].includes(decision.action) ? decision.action : 'HOLD';
         decision.action = finalAction;
 
+        // Attach agent votes to decision for downstream use (autopsy, broadcast)
+        decision.agentVotes = votes;
+
         if (decision.action === 'SELL' && state.trades.length > 0) {
             const lastBuyTrade = state.trades.find(t => t.type === 'BUY');
             if (lastBuyTrade) {
-                const pnl = currentPrice - lastBuyTrade.price;
-                if (pnl < 0) {
-                    userStore.recordLearning(userId, `[CRITICAL MISS] ${product} loss of $${Math.abs(pnl).toFixed(2)}. Tighten entry criteria.`);
-                } else {
-                    userStore.recordLearning(userId, `[WIN] ${product} profit of $${pnl.toFixed(2)}. Pattern exploited successfully.`);
-                }
+                const pnlPct = ((currentPrice - lastBuyTrade.price) / lastBuyTrade.price) * 100;
+                // Fire-and-forget: run per-agent autopsies + global memory in background
+                runAgentAutopsies(userId, product, lastBuyTrade.price, currentPrice, pnlPct, votes).catch(() => {});
             }
         } else if (decision.lesson_learned && decision.action !== 'HOLD') {
             userStore.recordLearning(userId, decision.lesson_learned);
@@ -160,30 +187,69 @@ Respond with JSON only.`;
 
 /**
  * Phase 3: True LLM Self-Learning (Autopsy)
- * Evaluates a closed trade and generates a concise lesson for the Vector DB/Memory.
+ * Runs per-agent and for the global portfolio memory.
+ * Non-blocking — called fire-and-forget after a SELL.
  */
 async function performAutopsy(userId, product, entryPrice, exitPrice, pnlPct) {
     const isWin = pnlPct > 0;
     const systemPrompt = 'You are a quantitative trading autopsy agent. Analyze the trade result and output a single concise sentence summarizing the lesson learned. Respond with JSON containing { "lesson": "..." }';
-    
-    const prompt = `
-Trade Autopsy for ${product}:
-- Entry Price: $${entryPrice.toFixed(2)}
-- Exit Price: $${exitPrice.toFixed(2)}
-- PnL: ${pnlPct.toFixed(2)}%
 
-This trade was a ${isWin ? 'WIN' : 'LOSS'}. 
-Based on standard market dynamics, why might this have happened, and what rule should we add to our memory to improve future trades? Keep it to one precise sentence.
-`;
+    const prompt = `Trade Autopsy for ${product}:
+- Entry: $${Number(entryPrice).toFixed(2)} | Exit: $${Number(exitPrice).toFixed(2)} | PnL: ${pnlPct.toFixed(2)}%
+This trade was a ${isWin ? 'WIN' : 'LOSS'}.
+What specific rule should this agent apply to improve future trades? One precise sentence.`;
 
     try {
-        const raw = await aiChat(systemPrompt, prompt, true, 200);
+        const raw = await aiChat(systemPrompt, prompt, true, 150);
         const data = JSON.parse(raw);
         return data.lesson || `Trade closed with ${pnlPct.toFixed(2)}% PnL.`;
     } catch (err) {
         console.error('Autopsy failed:', err.message);
         return null;
     }
+}
+
+/**
+ * Run autopsy for all agents simultaneously after a closed trade.
+ * Each agent gets a lesson personalized to its strategy type.
+ * Fire-and-forget — caller should not await.
+ */
+async function runAgentAutopsies(userId, product, entryPrice, exitPrice, pnlPct, agentVotes) {
+    const pnlStr = pnlPct.toFixed(2);
+    const isWin = pnlPct > 0;
+    const systemPrompt = 'You are a specialist trading agent analyzing your own trade outcome. Output ONE precise rule as JSON: { "lesson": "..." }. Max 30 words.';
+
+    const AGENT_TYPES = {
+        MOMENTUM:         'momentum (MA crossover, trend strength)',
+        MEAN_REVERSION:   'mean reversion (RSI extremes, Bollinger Bands)',
+        TREND_FOLLOWING:  'trend following (EMA cloud, ADX filter)',
+        SENTIMENT_DRIVEN: 'sentiment (Fear & Greed, macro composite)',
+    };
+
+    const jobs = Object.entries(AGENT_TYPES).map(async ([agentId, approach]) => {
+        const vote = agentVotes?.find(v => v.agentId === agentId);
+        const wasCorrect = vote ? (
+            (vote.signal === 'BUY' && isWin) || (vote.signal === 'SELL' && !isWin)
+        ) : null;
+
+        const prompt = `You are the ${agentId} agent using ${approach}.
+Trade: ${product} | Entry $${Number(entryPrice).toFixed(2)} | Exit $${Number(exitPrice).toFixed(2)} | ${pnlStr}% ${isWin ? 'PROFIT' : 'LOSS'}
+Your signal was: ${vote?.signal || 'HOLD'} (${wasCorrect === true ? 'CORRECT' : wasCorrect === false ? 'WRONG' : 'N/A'})
+Write one rule to improve YOUR specific ${approach} strategy going forward.`;
+
+        try {
+            const raw = await aiChat(systemPrompt, prompt, true, 100);
+            const data = JSON.parse(raw);
+            if (data.lesson) recordAgentLesson(userId, agentId, data.lesson);
+        } catch {}
+    });
+
+    // Run all agent autopsies in parallel + global memory
+    const globalLesson = await performAutopsy(userId, product, entryPrice, exitPrice, pnlPct);
+    if (globalLesson) userStore.recordLearning(userId, globalLesson);
+
+    await Promise.allSettled(jobs);
+    console.log(`🧠 Autopsies complete for ${product} trade (${pnlStr}%)`);
 }
 
 const AGENT_PERSONAS = [
@@ -225,39 +291,76 @@ const AGENT_PERSONAS = [
 ];
 
 /**
- * Situation Room: 5 agents each give individual responses.
- * Round 1: 4 sub-agents run in parallel.
- * Round 2: Orion synthesizes all 4 and gives final verdict.
+ * Situation Room: 5 agents in a persistent group chat.
+ * - Accepts full conversation history so agents can reference prior exchanges.
+ * - Round 1: 4 sub-agents respond in parallel, each aware of chat history.
+ * - Round 2: Orion reads the full debate + history and gives the final verdict.
+ *
+ * history: [{ role: 'user'|'agent', agentName?: string, content: string }]
  */
-async function answerUserQueryMultiAgent(userId, userMessage, productId, onAgentResponse) {
+async function answerUserQueryMultiAgent(userId, userMessage, productId, onAgentResponse, history = []) {
     const state = userStore.getPaperState(userId);
     const product = productId || state.selectedProduct || 'BTC-USD';
     const [baseAsset] = product.split('-');
 
-    const signals = await getSignals().catch(() => null);
+    const [signals, newsItems] = await Promise.all([
+        getSignals().catch(() => null),
+        require('./signalEngine').getNews().catch(() => [])
+    ]);
 
     const fearGreedStr = signals?.fearGreed ? `${signals.fearGreed.value}/100 — ${signals.fearGreed.classification}` : 'N/A';
     const compositeStr = signals ? `${signals.compositeScore > 0 ? '+' : ''}${signals.compositeScore}` : 'N/A';
-    const learningContext = state.learningHistory.slice(0, 5).map((h, i) => `${i + 1}. ${h.knowledge}`).join('\n');
+    const learningContext = state.learningHistory.slice(0, 3).map((h, i) => `${i + 1}. ${h.knowledge}`).join('\n');
+
+    // Build agent lessons summary
+    const user = userStore._ensureUser(userId);
+    const agentLessons = (user.strategies || [])
+        .filter(s => s.lessons?.length > 0)
+        .map(s => `${s.name}: ${s.lessons[0].lesson}`)
+        .join(' | ');
+
+    // Build conversation history summary (last 6 exchanges)
+    const recentHistory = history.slice(-6);
+    const historyText = recentHistory.length > 0
+        ? '\n=== PRIOR CONVERSATION ===\n' + recentHistory.map(m =>
+            m.role === 'user' ? `User: ${m.content}` : `${m.agentName || 'Agent'}: ${m.content}`
+          ).join('\n') + '\n'
+        : '';
+
+    const newsHeadlines = Array.isArray(newsItems) ? newsItems.slice(0, 2).map(n => `• [${n.source}] ${n.headline}`).join('\n') : '';
 
     const sharedContext = `=== LIVE MARKET DATA ===
-Asset: ${product} | Price context from last session
-Portfolio: $${state.balance.toFixed(2)} cash, ${state.assetHoldings} ${baseAsset} holdings
+Asset: ${product} | Balance: $${state.balance.toFixed(2)} | Holdings: ${state.assetHoldings} ${baseAsset}
 Engine: ${state.engineStatus || 'STOPPED'} | Mode: ${state.tradingMode || 'FULL_AUTO'}
-Fear & Greed: ${fearGreedStr} | Composite: ${compositeStr}
-Learned Rules: ${learningContext || 'None yet'}
+Fear & Greed: ${fearGreedStr} | Composite Signal: ${compositeStr}
+${newsHeadlines ? '=== BREAKING NEWS ===\n' + newsHeadlines + '\n' : ''}${historyText}
+=== AGENT SELF-LEARNED RULES ===
+${agentLessons || learningContext || 'No learned rules yet'}
 
-=== USER MESSAGE ===
-${userMessage}`;
+=== NEW USER MESSAGE ===
+${userMessage}
+
+Important: Reference the conversation history and what your fellow agents say. Stay in character.`;
 
     const subAgents = AGENT_PERSONAS.filter(a => a.id !== 'COMBINED');
     const orionAgent = AGENT_PERSONAS.find(a => a.id === 'COMBINED');
     const subAgentResponses = {};
 
-    // Round 1: Sub-agents run in parallel
+    // Round 1: Sub-agents respond in parallel
     const agentCalls = subAgents.map(async (agent) => {
+        // Each agent gets context of what other agents have said in history
+        const priorAgentMessages = recentHistory
+            .filter(m => m.role === 'agent' && m.agentName !== agent.name)
+            .slice(-2)
+            .map(m => `${m.agentName}: "${m.content.slice(0, 100)}…"`)
+            .join('\n');
+
+        const agentContext = priorAgentMessages
+            ? `${sharedContext}\n\nRecent team input:\n${priorAgentMessages}`
+            : sharedContext;
+
         try {
-            const text = await aiChat(agent.personality, sharedContext, false, 200);
+            const text = await aiChat(agent.personality, agentContext, false, 200);
             subAgentResponses[agent.name] = text;
             onAgentResponse(agent.id, agent.name, agent.role, agent.color, text);
         } catch (err) {
@@ -268,24 +371,25 @@ ${userMessage}`;
 
     await Promise.allSettled(agentCalls);
 
-    // Round 2: Orion synthesizes
+    // Round 2: Orion synthesizes the full debate
     const debateContext = Object.entries(subAgentResponses)
         .map(([name, text]) => `${name}: ${text}`)
         .join('\n\n');
 
     const orionContext = `${sharedContext}
 
-=== AGENT DEBATE (Round 1) ===
+=== THIS ROUND'S DEBATE ===
 ${debateContext}
 
-Synthesize the above arguments. Agree or disagree, and provide final direction.`;
+You are Orion. Synthesize this debate. Call out where agents agree or disagree. Reference any conflicting signals.
+End with a clear LONG, FLAT, or WATCH stance and one actionable insight.`;
 
     try {
-        const text = await aiChat(orionAgent.personality, orionContext, false, 250);
+        const text = await aiChat(orionAgent.personality, orionContext, false, 280);
         onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, text);
     } catch (err) {
         onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, `[offline: ${err.message}]`);
     }
 }
 
-module.exports = { evaluateMarketSignal, answerUserQueryMultiAgent, performAutopsy };
+module.exports = { evaluateMarketSignal, answerUserQueryMultiAgent, performAutopsy, runAgentAutopsies };

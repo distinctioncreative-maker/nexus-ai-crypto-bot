@@ -189,7 +189,8 @@ wss.on('connection', async (ws, req) => {
                     userStore.getSelectedProduct(userId),
                     (agentId, name, role, color, text) => {
                         sendData('SITUATION_ROOM_AGENT', { agentId, name, role, color, text });
-                    }
+                    },
+                    Array.isArray(msg.payload.history) ? msg.payload.history : []
                 );
                 sendData('SITUATION_ROOM_DONE', {});
             }

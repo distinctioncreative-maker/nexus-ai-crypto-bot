@@ -404,8 +404,13 @@ function startUserStream(userId, broadcastFn, initialProduct) {
                 return;
             }
 
-            broadcastFn('AI_STATUS', `${activeProduct}: ${decision.action} | Confidence ${decision.confidence}%${decision.action === 'HOLD' ? ' — holding position' : ''}`);
+            // Build agent vote summary for the status message
+            const voteStr = decision.agentVotes
+                ? `[${decision.agentVotes.filter(v => v.agentId !== 'COMBINED').map(v => `${v.name}:${v.signal}`).join(' ')}]`
+                : '';
+            broadcastFn('AI_STATUS', `${activeProduct}: ${decision.action} | Confidence ${decision.confidence}% ${voteStr}${decision.action === 'HOLD' ? ' — holding' : ''}`);
             broadcastFn('AI_THESIS', decision.reasoning);
+            broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
 
             const minConfidence = engine.engineStatus === 'LIVE_RUNNING' ? 80 : 65;
             if (decision && decision.action !== 'HOLD' && decision.confidence >= minConfidence) {

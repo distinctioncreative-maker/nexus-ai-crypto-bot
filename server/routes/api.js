@@ -356,7 +356,7 @@ router.get('/ai-status', authenticate, async (req, res) => {
 
 // Protected: Situation Room — AI agents answer free-form user questions with live context
 router.post('/situation-room', authenticate, async (req, res) => {
-    const { message, productId } = req.body;
+    const { message, productId, history } = req.body;
     if (!message || !message.trim()) {
         return res.status(400).json({ error: 'Message is required.' });
     }
@@ -369,7 +369,8 @@ router.post('/situation-room', authenticate, async (req, res) => {
             productId,
             (agentId, name, role, color, text) => {
                 responses.push({ agentId, name, role, color, text });
-            }
+            },
+            Array.isArray(history) ? history : []
         );
         res.json({ agents: responses });
     } catch (err) {

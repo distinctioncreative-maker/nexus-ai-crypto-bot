@@ -1,422 +1,421 @@
+/**
+ * Strategy Engine — Individualized algorithmic cores for each agent.
+ *
+ * Each agent has its own signal logic (pure math, no AI calls).
+ * Results feed into the AI synthesis layer as votes.
+ * Agents maintain shadow portfolios and self-train via autopsy.
+ */
+
 const userStore = require('../userStore');
 
-let _persistence = null;
-let _supabase = null;
-function getPersistence() {
-    if (!_persistence) _persistence = require('../db/persistence');
-    return _persistence;
-}
-function getSupabase() {
-    if (!_supabase) _supabase = require('../middleware/auth').supabase;
-    return _supabase;
-}
+// ─── Technical Helpers ──────────────────────────────────────────────────────
 
-const INITIAL_AGENT_CAPITAL = 100000;
-const SHADOW_TRADE_FRACTION = 0.1;
-
-const BASE_STRATEGIES = [
-    {
-        id: 'MOMENTUM',
-        name: 'Momentum MA Cross',
-        parameters: { maPeriod: 10, slowMaPeriod: 30, momentumLookback: 5 }
-    },
-    {
-        id: 'MEAN_REVERSION',
-        name: 'Mean Reversion RSI',
-        parameters: { rsiPeriod: 14, rsiOversold: 30, rsiOverbought: 70 }
-    },
-    {
-        id: 'TREND_FOLLOWING',
-        name: 'Trend Following EMA',
-        parameters: { emaPeriod: 20, adxPeriod: 14, adxThreshold: 25 }
-    },
-    {
-        id: 'SENTIMENT_DRIVEN',
-        name: 'Sentiment Driven',
-        parameters: { sentimentWeight: 0.7, technicalWeight: 0.3, rsiPeriod: 14 }
-    },
-    {
-        id: 'COMBINED',
-        name: 'Combined Signal',
-        parameters: { maPeriod: 10, rsiPeriod: 14, sentimentWeight: 0.4, momentumLookback: 5 }
-    }
-];
-
-function emptyShadowPortfolio() {
-    return {
-        cash: INITIAL_AGENT_CAPITAL,
-        holdings: 0,
-        entryPrice: null,
-        equity: INITIAL_AGENT_CAPITAL,
-        peakEquity: INITIAL_AGENT_CAPITAL,
-        maxDrawdown: 0,
-        realizedPnl: 0,
-        trades: [],
-        closedTrades: []
-    };
-}
-
-function normalizeStrategy(base, existing = {}) {
-    return {
-        ...base,
-        ...existing,
-        id: base.id,
-        name: existing.name || base.name,
-        parameters: { ...base.parameters, ...(existing.parameters || {}) },
-        status: existing.status || 'active',
-        generation: existing.generation || 1,
-        wins: existing.wins || 0,
-        losses: existing.losses || 0,
-        totalPnlPct: existing.totalPnlPct || 0,
-        realizedPnl: existing.realizedPnl || 0,
-        sharpe: existing.sharpe || 0,
-        maxDrawdown: existing.maxDrawdown || 0,
-        peakEquity: existing.peakEquity || INITIAL_AGENT_CAPITAL,
-        lastSignal: existing.lastSignal || null,
-        lastVote: existing.lastVote || null,
-        lessons: Array.isArray(existing.lessons) ? existing.lessons.slice(0, 10) : [],
-        productStates: existing.productStates || {},
-        shadowPortfolio: existing.shadowPortfolio || emptyShadowPortfolio()
-    };
-}
-
-function ensureStrategies(userId) {
-    const user = userStore._ensureUser(userId);
-    const existingById = new Map((user.strategies || []).map(strategy => [baseId(strategy.id), strategy]));
-    user.strategies = BASE_STRATEGIES.map(base => normalizeStrategy(base, existingById.get(base.id)));
-    return user.strategies;
-}
-
-function baseId(id = '') {
-    return id.split('_GEN')[0];
-}
-
-function computeSMA(prices, period) {
+function sma(prices, period) {
     if (prices.length < period) return null;
     const slice = prices.slice(-period);
     return slice.reduce((a, b) => a + b, 0) / period;
 }
 
-function computeEMA(prices, period) {
+function ema(prices, period) {
     if (prices.length < period) return null;
     const k = 2 / (period + 1);
-    let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    let emaVal = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
     for (let i = period; i < prices.length; i++) {
-        ema = prices[i] * k + ema * (1 - k);
+        emaVal = prices[i] * k + emaVal * (1 - k);
     }
-    return ema;
+    return emaVal;
 }
 
-function computeRSI(prices, period) {
+function rsi(prices, period = 14) {
     if (prices.length < period + 1) return null;
-    const slice = prices.slice(-(period + 1));
-    let gains = 0;
-    let losses = 0;
-    for (let i = 1; i < slice.length; i++) {
-        const diff = slice[i] - slice[i - 1];
-        if (diff > 0) gains += diff;
-        else losses -= diff;
+    const closes = prices.slice(-(period + 1));
+    let gains = 0, losses = 0;
+    for (let i = 1; i < closes.length; i++) {
+        const diff = closes[i] - closes[i - 1];
+        if (diff > 0) gains += diff; else losses -= diff;
     }
     const avgGain = gains / period;
     const avgLoss = losses / period;
     if (avgLoss === 0) return 100;
     const rs = avgGain / avgLoss;
-    return 100 - (100 / (1 + rs));
+    return 100 - 100 / (1 + rs);
 }
 
-function evaluateStrategy(strategy, prices, signals) {
-    const { parameters } = strategy;
-    const current = prices[prices.length - 1];
+function bollingerBands(prices, period = 20, stdDevMult = 2) {
+    if (prices.length < period) return null;
+    const slice = prices.slice(-period);
+    const mean = slice.reduce((a, b) => a + b, 0) / period;
+    const variance = slice.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / period;
+    const stdDev = Math.sqrt(variance);
+    return { upper: mean + stdDevMult * stdDev, middle: mean, lower: mean - stdDevMult * stdDev };
+}
 
-    switch (strategy.id) {
-        case 'MOMENTUM': {
-            const fastMA = computeSMA(prices, parameters.maPeriod);
-            const slowMA = computeSMA(prices, parameters.slowMaPeriod);
-            if (!fastMA || !slowMA) return 'HOLD';
-            const momentum = prices.slice(-parameters.momentumLookback);
-            const isRising = momentum[momentum.length - 1] > momentum[0];
-            if (fastMA > slowMA && isRising) return 'BUY';
-            if (fastMA < slowMA && !isRising) return 'SELL';
-            return 'HOLD';
-        }
-        case 'MEAN_REVERSION': {
-            const rsi = computeRSI(prices, parameters.rsiPeriod);
-            if (rsi === null) return 'HOLD';
-            if (rsi < parameters.rsiOversold) return 'BUY';
-            if (rsi > parameters.rsiOverbought) return 'SELL';
-            return 'HOLD';
-        }
-        case 'TREND_FOLLOWING': {
-            const ema = computeEMA(prices, parameters.emaPeriod);
-            if (!ema) return 'HOLD';
-            if (current > ema * 1.002) return 'BUY';
-            if (current < ema * 0.998) return 'SELL';
-            return 'HOLD';
-        }
-        case 'SENTIMENT_DRIVEN': {
-            const rsi = computeRSI(prices, parameters.rsiPeriod);
-            if (!signals || rsi === null) return 'HOLD';
-            const composite = signals.compositeScore || 0;
-            const techScore = rsi < 45 ? 1 : rsi > 55 ? -1 : 0;
-            const sentScore = composite > 10 ? 1 : composite < -10 ? -1 : 0;
-            const blended = (sentScore * parameters.sentimentWeight) + (techScore * parameters.technicalWeight);
-            if (blended > 0.3) return 'BUY';
-            if (blended < -0.3) return 'SELL';
-            return 'HOLD';
-        }
-        case 'COMBINED':
-        default: {
-            const fastMA = computeSMA(prices, parameters.maPeriod);
-            const rsi = computeRSI(prices, parameters.rsiPeriod);
-            const composite = signals?.compositeScore || 0;
-            if (!fastMA || rsi === null) return 'HOLD';
-            const sma = computeSMA(prices, 30);
-            const maTrend = sma ? (fastMA > sma ? 1 : -1) : 0;
-            const rsiSignal = rsi < 45 ? 1 : rsi > 55 ? -1 : 0;
-            const sentSignal = composite > 10 ? 1 : composite < -10 ? -1 : 0;
-            const score = maTrend + rsiSignal + (sentSignal * parameters.sentimentWeight);
-            if (score >= 1.0) return 'BUY';
-            if (score <= -1.0) return 'SELL';
-            return 'HOLD';
-        }
+function adx(highs, lows, closes, period = 14) {
+    if (closes.length < period + 1) return null;
+    const trueRanges = [];
+    const plusDM = [];
+    const minusDM = [];
+    for (let i = 1; i < closes.length; i++) {
+        const tr = Math.max(
+            highs[i] - lows[i],
+            Math.abs(highs[i] - closes[i - 1]),
+            Math.abs(lows[i] - closes[i - 1])
+        );
+        trueRanges.push(tr);
+        const upMove = highs[i] - highs[i - 1];
+        const downMove = lows[i - 1] - lows[i];
+        plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+        minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
     }
+    const atr = trueRanges.slice(-period).reduce((a, b) => a + b, 0) / period;
+    if (atr === 0) return 0;
+    const pdi = (plusDM.slice(-period).reduce((a, b) => a + b, 0) / period / atr) * 100;
+    const mdi = (minusDM.slice(-period).reduce((a, b) => a + b, 0) / period / atr) * 100;
+    const dx = Math.abs(pdi - mdi) / (pdi + mdi) * 100 || 0;
+    return dx;
 }
 
-function getProductShadow(strategy, productId) {
-    if (!strategy.productStates[productId]) {
-        strategy.productStates[productId] = emptyShadowPortfolio();
+// ─── Per-Agent Signal Computation ────────────────────────────────────────────
+
+/**
+ * Atlas — Momentum via fast/slow MA crossover + volume confirmation
+ */
+function computeMomentumSignal(candles, agentParams = {}) {
+    const fastPeriod = agentParams.fastPeriod || 5;
+    const slowPeriod = agentParams.slowPeriod || 20;
+    const closes = candles.map(c => c.value);
+
+    const fastMA = sma(closes, fastPeriod);
+    const slowMA = sma(closes, slowPeriod);
+    if (fastMA === null || slowMA === null) return { signal: 'HOLD', strength: 0, reason: 'Insufficient data' };
+
+    const gap = (fastMA - slowMA) / slowMA;
+    const prevFastMA = sma(closes.slice(0, -1), fastPeriod);
+    const prevSlowMA = sma(closes.slice(0, -1), slowPeriod);
+
+    if (fastMA > slowMA && prevFastMA !== null && prevFastMA <= prevSlowMA && gap > 0.001) {
+        return { signal: 'BUY', strength: Math.min(gap * 1000, 100), reason: `MA crossover bullish: fast(${fastPeriod})=$${fastMA.toFixed(2)} > slow(${slowPeriod})=$${slowMA.toFixed(2)}` };
     }
-    return strategy.productStates[productId];
-}
-
-function updateDrawdown(strategy, shadow) {
-    if (shadow.equity > shadow.peakEquity) shadow.peakEquity = shadow.equity;
-    const drawdown = shadow.peakEquity > 0 ? ((shadow.peakEquity - shadow.equity) / shadow.peakEquity) * 100 : 0;
-    if (drawdown > shadow.maxDrawdown) shadow.maxDrawdown = drawdown;
-    strategy.maxDrawdown = Math.max(...Object.values(strategy.productStates).map(p => p.maxDrawdown || 0), 0);
-    strategy.peakEquity = Math.max(...Object.values(strategy.productStates).map(p => p.peakEquity || 0), INITIAL_AGENT_CAPITAL);
-}
-
-function updateShadowPortfolio(strategy, signal, price, productId) {
-    const shadow = getProductShadow(strategy, productId);
-    let closedTrade = null;
-
-    if (signal === 'BUY' && shadow.holdings === 0 && shadow.cash > 0) {
-        const spend = shadow.cash * SHADOW_TRADE_FRACTION;
-        const amount = spend / price;
-        shadow.cash -= spend;
-        shadow.holdings += amount;
-        shadow.entryPrice = price;
-        shadow.trades.unshift({
-            type: 'BUY',
-            amount,
-            price,
-            product: productId,
-            time: new Date().toISOString()
-        });
-    } else if (signal === 'SELL' && shadow.holdings > 0) {
-        const amount = shadow.holdings;
-        const proceeds = amount * price;
-        const costBasis = amount * shadow.entryPrice;
-        const pnl = proceeds - costBasis;
-        const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
-
-        shadow.cash += proceeds;
-        shadow.holdings = 0;
-        shadow.entryPrice = null;
-        shadow.realizedPnl += pnl;
-        closedTrade = {
-            type: 'SELL',
-            amount,
-            price,
-            product: productId,
-            pnl,
-            pnlPct,
-            time: new Date().toISOString()
-        };
-        shadow.trades.unshift(closedTrade);
-        shadow.closedTrades.unshift(closedTrade);
-        if (shadow.closedTrades.length > 200) shadow.closedTrades.pop();
-
-        if (pnl > 0) strategy.wins += 1;
-        else strategy.losses += 1;
-        strategy.totalPnlPct += pnlPct;
-        strategy.realizedPnl += pnl;
-        strategy.lessons.unshift(pnl > 0
-            ? `Win on ${productId}: ${signal} closed +${pnlPct.toFixed(2)}%.`
-            : `Loss on ${productId}: ${signal} closed ${pnlPct.toFixed(2)}%. Tighten entries.`);
-        strategy.lessons = strategy.lessons.slice(0, 10);
+    if (fastMA < slowMA && prevFastMA !== null && prevFastMA >= prevSlowMA && gap < -0.001) {
+        return { signal: 'SELL', strength: Math.min(Math.abs(gap) * 1000, 100), reason: `MA crossover bearish: fast(${fastPeriod})=$${fastMA.toFixed(2)} < slow(${slowPeriod})=$${slowMA.toFixed(2)}` };
     }
-
-    shadow.equity = shadow.cash + (shadow.holdings * price);
-    updateDrawdown(strategy, shadow);
-
-    const closedTrades = strategy.wins + strategy.losses;
-    const avgPnlPct = closedTrades > 0 ? strategy.totalPnlPct / closedTrades : 0;
-    const winRate = closedTrades > 0 ? strategy.wins / closedTrades : 0.5;
-    strategy.sharpe = parseFloat(((avgPnlPct * winRate) / Math.max(strategy.maxDrawdown, 1)).toFixed(3));
-    strategy.shadowPortfolio = { ...shadow };
-
-    return closedTrade;
+    return { signal: 'HOLD', strength: Math.abs(gap) * 500, reason: `MA trend ${gap > 0 ? 'bullish' : 'bearish'} but no fresh crossover` };
 }
 
-function evaluateAndTrainStrategies(userId, prices, signals, productId) {
-    const strategies = ensureStrategies(userId);
-    const price = prices[prices.length - 1];
-    let closedCount = 0;
+/**
+ * Vera — Mean Reversion via RSI + Bollinger Bands
+ */
+function computeMeanReversionSignal(candles, agentParams = {}) {
+    const rsiPeriod = agentParams.rsiPeriod || 14;
+    const oversold = agentParams.oversold || 32;
+    const overbought = agentParams.overbought || 68;
+    const closes = candles.map(c => c.value);
 
-    const votes = strategies.map(strategy => {
-        const signal = evaluateStrategy(strategy, prices, signals);
-        strategy.lastSignal = signal;
-        strategy.lastVote = {
-            signal,
-            product: productId,
-            price,
-            time: new Date().toISOString()
-        };
-        const closedTrade = updateShadowPortfolio(strategy, signal, price, productId);
-        if (closedTrade) closedCount += 1;
-        return {
-            strategyId: strategy.id,
-            name: strategy.name,
-            signal,
-            shadowPortfolio: strategy.shadowPortfolio,
-            sharpe: strategy.sharpe,
-            wins: strategy.wins,
-            losses: strategy.losses
-        };
-    });
+    const rsiVal = rsi(closes, rsiPeriod);
+    const bb = bollingerBands(closes, 20, 2);
+    const currentPrice = closes[closes.length - 1];
 
-    maybeRunTournament(userId, closedCount);
-    getPersistence().saveStrategies(getSupabase(), userId, userStore.getStrategies(userId)).catch(error => {
-        console.warn('saveStrategies failed:', error.message);
-    });
-    return votes;
-}
+    if (rsiVal === null || !bb) return { signal: 'HOLD', strength: 0, reason: 'Insufficient data' };
 
-function maybeRunTournament(userId, closedCount) {
-    if (closedCount === 0) return;
-    const user = userStore._ensureUser(userId);
-    const totalClosedTrades = user.strategies.reduce((sum, strategy) => sum + strategy.wins + strategy.losses, 0);
-    const tournamentState = user.strategyTournament || { lastCycleClosedTrades: 0 };
+    const bbPosition = (currentPrice - bb.lower) / (bb.upper - bb.lower); // 0=lower, 1=upper
 
-    if (totalClosedTrades - tournamentState.lastCycleClosedTrades < 20) {
-        user.strategyTournament = tournamentState;
-        return;
+    if (rsiVal < oversold && bbPosition < 0.25) {
+        const strength = ((oversold - rsiVal) / oversold) * 100;
+        return { signal: 'BUY', strength, reason: `RSI=${rsiVal.toFixed(1)} oversold + price near BB lower ($${bb.lower.toFixed(2)})` };
     }
-
-    tournamentState.lastCycleClosedTrades = totalClosedTrades;
-    user.strategyTournament = tournamentState;
-    runTournament(userId);
-}
-
-function mutateParameters(parameters) {
-    const mutated = {};
-    for (const [key, value] of Object.entries(parameters)) {
-        if (typeof value !== 'number') {
-            mutated[key] = value;
-            continue;
-        }
-        const next = value * (1 + (Math.random() - 0.5) * 0.2);
-        mutated[key] = Number.isInteger(value) ? Math.max(1, Math.round(next)) : Math.round(next * 100) / 100;
+    if (rsiVal > overbought && bbPosition > 0.75) {
+        const strength = ((rsiVal - overbought) / (100 - overbought)) * 100;
+        return { signal: 'SELL', strength, reason: `RSI=${rsiVal.toFixed(1)} overbought + price near BB upper ($${bb.upper.toFixed(2)})` };
     }
-    return mutated;
+    return { signal: 'HOLD', strength: 0, reason: `RSI=${rsiVal.toFixed(1)}, BB position=${(bbPosition * 100).toFixed(0)}% — no extreme` };
 }
 
-function runTournament(userId) {
-    const strategies = ensureStrategies(userId);
-    const ranked = [...strategies].sort((a, b) => {
-        const aEquity = a.shadowPortfolio?.equity || INITIAL_AGENT_CAPITAL;
-        const bEquity = b.shadowPortfolio?.equity || INITIAL_AGENT_CAPITAL;
-        return (b.realizedPnl + (bEquity - INITIAL_AGENT_CAPITAL)) - (a.realizedPnl + (aEquity - INITIAL_AGENT_CAPITAL));
-    });
+/**
+ * Rex — Trend Following via EMA cloud + ADX
+ */
+function computeTrendSignal(candles, agentParams = {}) {
+    const fastEma = agentParams.fastEma || 8;
+    const slowEma = agentParams.slowEma || 21;
+    const adxThreshold = agentParams.adxThreshold || 20;
+    const closes = candles.map(c => c.value);
+    const highs  = candles.map(c => c.high || c.value);
+    const lows   = candles.map(c => c.low || c.value);
 
-    ranked.forEach((strategy, index) => {
-        strategy.status = index < 2 ? 'active' : 'learning';
-    });
+    const emaFast = ema(closes, fastEma);
+    const emaSlow = ema(closes, slowEma);
+    const adxVal  = adx(highs, lows, closes, 14);
+    const currentPrice = closes[closes.length - 1];
 
-    ranked.slice(-2).forEach(strategy => {
-        strategy.parameters = mutateParameters(strategy.parameters);
-        strategy.generation += 1;
-        strategy.lessons.unshift(`Tournament mutation after underperformance. New generation ${strategy.generation}.`);
-        strategy.lessons = strategy.lessons.slice(0, 10);
-    });
+    if (emaFast === null || emaSlow === null) return { signal: 'HOLD', strength: 0, reason: 'Insufficient data' };
 
-    snapshotStrategies(userId, strategies).catch(error => {
-        console.warn('snapshotStrategies failed:', error.message);
-    });
+    const trendStrength = adxVal || 0;
+    const priceBullish = currentPrice > emaFast && emaFast > emaSlow;
+    const priceBearish = currentPrice < emaFast && emaFast < emaSlow;
+
+    if (priceBullish && trendStrength >= adxThreshold) {
+        return { signal: 'BUY', strength: trendStrength, reason: `Price above EMA cloud (${fastEma}/${slowEma}), ADX=${adxVal?.toFixed(1)} — strong uptrend` };
+    }
+    if (priceBearish && trendStrength >= adxThreshold) {
+        return { signal: 'SELL', strength: trendStrength, reason: `Price below EMA cloud (${fastEma}/${slowEma}), ADX=${adxVal?.toFixed(1)} — strong downtrend` };
+    }
+    return { signal: 'HOLD', strength: 0, reason: `ADX=${adxVal?.toFixed(1)} (need >${adxThreshold}) — trend too weak to enter` };
 }
 
-function getWinningStrategy(userId) {
-    const strategies = ensureStrategies(userId);
-    return [...strategies].sort((a, b) => {
-        const aScore = (a.shadowPortfolio?.equity || INITIAL_AGENT_CAPITAL) + (a.sharpe * 100);
-        const bScore = (b.shadowPortfolio?.equity || INITIAL_AGENT_CAPITAL) + (b.sharpe * 100);
-        return bScore - aScore;
-    })[0];
+/**
+ * Luna — Sentiment via Fear & Greed + DeFi TVL
+ */
+function computeSentimentSignal(candles, signals, agentParams = {}) {
+    const fearBuyThreshold = agentParams.fearBuyThreshold || 30;
+    const greedSellThreshold = agentParams.greedSellThreshold || 70;
+    const fearGreed = signals?.fearGreed?.value;
+    const tvlChange = signals?.tvl?.changePct;
+    const composite = signals?.compositeScore || 0;
+
+    if (fearGreed == null) return { signal: 'HOLD', strength: 0, reason: 'Macro data unavailable' };
+
+    const closes = candles.map(c => c.value);
+    const rsiVal = rsi(closes, 14);
+
+    if (fearGreed < fearBuyThreshold && composite >= 20 && (tvlChange == null || tvlChange > -10)) {
+        const strength = ((fearBuyThreshold - fearGreed) / fearBuyThreshold) * 100;
+        return { signal: 'BUY', strength, reason: `Fear & Greed=${fearGreed} (extreme fear), composite=+${composite} — buy the fear` };
+    }
+    if (fearGreed > greedSellThreshold && composite <= -20) {
+        const strength = ((fearGreed - greedSellThreshold) / (100 - greedSellThreshold)) * 100;
+        return { signal: 'SELL', strength, reason: `Fear & Greed=${fearGreed} (extreme greed), composite=${composite} — sell the euphoria` };
+    }
+    return { signal: 'HOLD', strength: Math.abs(composite), reason: `F&G=${fearGreed}, composite=${composite > 0 ? '+' : ''}${composite} — no extreme` };
 }
 
-function evaluateAllStrategies(userId, prices, signals, productId = userStore.getSelectedProduct(userId)) {
-    return evaluateAndTrainStrategies(userId, prices, signals, productId);
-}
+/**
+ * Orion — Weighted synthesis of all 4 sub-agents
+ * Weights are dynamically adjusted based on each agent's recent Sharpe ratio.
+ */
+function computeCombinedSignal(votes, agentStats = {}) {
+    const signalToNum = { BUY: 1, HOLD: 0, SELL: -1 };
+    const numToSignal = (n) => n > 0.25 ? 'BUY' : n < -0.25 ? 'SELL' : 'HOLD';
 
-function getStrategyConsensus(userId, prices, signals, productId = userStore.getSelectedProduct(userId)) {
-    const votes = evaluateAndTrainStrategies(userId, prices, signals, productId);
-    const strategies = ensureStrategies(userId);
-    const buckets = { BUY: [], HOLD: [], SELL: [] };
+    let totalWeight = 0;
+    let weightedSum = 0;
+    const voteBreakdown = [];
 
     for (const vote of votes) {
-        const strategy = strategies.find(item => item.id === vote.strategyId);
-        const totalTrades = (strategy?.wins || 0) + (strategy?.losses || 0);
-        const winRate = totalTrades > 0 ? strategy.wins / totalTrades : 0.5;
-        const equityBonus = Math.max(0, ((strategy?.shadowPortfolio?.equity || INITIAL_AGENT_CAPITAL) - INITIAL_AGENT_CAPITAL) / 10000);
-        const weight = 1 + Math.max(0, strategy?.sharpe || 0) + winRate + equityBonus;
-        buckets[vote.signal].push({ name: vote.name, id: vote.strategyId, weight });
+        // Sharpe-weighted: better performers get more say, min weight 0.5
+        const sharpe = agentStats[vote.agentId]?.sharpe || 0;
+        const weight = Math.max(0.5, 1 + sharpe * 0.5);
+        const numSignal = signalToNum[vote.signal] || 0;
+        weightedSum += numSignal * vote.strength * weight;
+        totalWeight += vote.strength * weight;
+        voteBreakdown.push(`${vote.name}: ${vote.signal} (${vote.strength.toFixed(0)}% str)`);
     }
 
-    const buyWeight = buckets.BUY.reduce((sum, vote) => sum + vote.weight, 0);
-    const sellWeight = buckets.SELL.reduce((sum, vote) => sum + vote.weight, 0);
-    const holdWeight = buckets.HOLD.reduce((sum, vote) => sum + vote.weight, 0);
-    const total = buyWeight + sellWeight + holdWeight || 1;
-
-    let consensus = 'HOLD';
-    if (buyWeight > sellWeight && buyWeight > holdWeight) consensus = 'BUY';
-    else if (sellWeight > buyWeight && sellWeight > holdWeight) consensus = 'SELL';
-
-    const directionalWeights = [buyWeight, sellWeight].filter(weight => weight > 0);
-    const dissent = directionalWeights.length === 2 ? Math.min(buyWeight, sellWeight) / total : 0;
-    const consensusVoters = buckets[consensus].sort((a, b) => b.weight - a.weight);
+    const normalised = totalWeight > 0 ? weightedSum / totalWeight : 0;
+    const signal = numToSignal(normalised);
+    const buyCount  = votes.filter(v => v.signal === 'BUY').length;
+    const sellCount = votes.filter(v => v.signal === 'SELL').length;
+    const holdCount = votes.filter(v => v.signal === 'HOLD').length;
+    const dissent = 1 - Math.max(buyCount, sellCount, holdCount) / votes.length;
 
     return {
-        consensus,
-        dissent: parseFloat(dissent.toFixed(2)),
-        buyPct: Math.round((buyWeight / total) * 100),
-        sellPct: Math.round((sellWeight / total) * 100),
-        holdPct: Math.round((holdWeight / total) * 100),
-        topStrategy: consensusVoters[0]?.name || 'None',
-        topStrategyId: consensusVoters[0]?.id || 'COMBINED',
-        totalAgents: strategies.length,
-        debate: votes.map(vote => `${vote.name}: ${vote.signal}`).join(' | '),
-        votes
+        signal,
+        strength: Math.abs(normalised * 100),
+        reason: voteBreakdown.join(' | '),
+        buyCount, sellCount, holdCount,
+        dissent: dissent.toFixed(2),
+        consensus: dissent < 0.3 ? 'STRONG' : dissent < 0.5 ? 'MODERATE' : 'SPLIT',
     };
 }
 
-async function snapshotStrategies(userId, strategies) {
-    const supabase = getSupabase();
-    if (!supabase) return;
-    const winner = getWinningStrategy(userId);
-    await supabase.from('agent_snapshots').insert({
-        user_id: userId,
-        tournament_generation: winner?.generation || 1,
-        strategies,
-        top_strategy: winner?.name || 'None',
-        notes: `Tournament cycle - ${strategies.length} shadow agents, leader: ${winner?.name || 'None'}`
+// ─── Public API ──────────────────────────────────────────────────────────────
+
+/**
+ * Run all 5 agents against current candle data and return their votes.
+ * This is the primary entry point for the trading loop.
+ */
+function getAgentConsensus(userId, candles, signals) {
+    const user = userStore._ensureUser(userId);
+    const strategies = user.strategies || [];
+
+    const getParams = (id) => strategies.find(s => s.id === id)?.parameters || {};
+    const agentStats = Object.fromEntries(strategies.map(s => [s.id, { sharpe: s.sharpe, wins: s.wins, losses: s.losses }]));
+
+    const atlasResult   = computeMomentumSignal(candles, getParams('MOMENTUM'));
+    const veraResult    = computeMeanReversionSignal(candles, getParams('MEAN_REVERSION'));
+    const rexResult     = computeTrendSignal(candles, getParams('TREND_FOLLOWING'));
+    const lunaResult    = computeSentimentSignal(candles, signals, getParams('SENTIMENT_DRIVEN'));
+
+    const votes = [
+        { agentId: 'MOMENTUM',        name: 'Atlas', ...atlasResult },
+        { agentId: 'MEAN_REVERSION',  name: 'Vera',  ...veraResult },
+        { agentId: 'TREND_FOLLOWING', name: 'Rex',   ...rexResult },
+        { agentId: 'SENTIMENT_DRIVEN',name: 'Luna',  ...lunaResult },
+    ];
+
+    const orionResult = computeCombinedSignal(votes, agentStats);
+    votes.push({ agentId: 'COMBINED', name: 'Orion', ...orionResult });
+
+    // Update lastSignal on each strategy in the user store
+    for (const vote of votes) {
+        const s = strategies.find(st => st.id === vote.agentId);
+        if (s) s.lastSignal = vote.signal;
+    }
+
+    return { votes, orion: orionResult };
+}
+
+/**
+ * Update a single agent's shadow portfolio based on price action.
+ * Called on every tick when engine is running.
+ */
+function tickShadowPortfolios(userId, candles, signals) {
+    const user = userStore._ensureUser(userId);
+    const strategies = user.strategies || [];
+    if (candles.length < 5) return;
+
+    const currentPrice = candles[candles.length - 1].value;
+    const signalers = [
+        { id: 'MOMENTUM',        fn: () => computeMomentumSignal(candles, strategies.find(s => s.id === 'MOMENTUM')?.parameters || {}) },
+        { id: 'MEAN_REVERSION',  fn: () => computeMeanReversionSignal(candles, strategies.find(s => s.id === 'MEAN_REVERSION')?.parameters || {}) },
+        { id: 'TREND_FOLLOWING', fn: () => computeTrendSignal(candles, strategies.find(s => s.id === 'TREND_FOLLOWING')?.parameters || {}) },
+        { id: 'SENTIMENT_DRIVEN',fn: () => computeSentimentSignal(candles, signals, strategies.find(s => s.id === 'SENTIMENT_DRIVEN')?.parameters || {}) },
+    ];
+
+    const MIN_STRENGTH = 40; // only shadow-trade when signal is confident
+
+    for (const { id, fn } of signalers) {
+        const strategy = strategies.find(s => s.id === id);
+        if (!strategy) continue;
+        const sp = strategy.shadowPortfolio;
+        if (!sp) continue;
+
+        const { signal, strength } = fn();
+
+        if (signal === 'BUY' && strength >= MIN_STRENGTH && sp.holdings === 0 && sp.equity > 100) {
+            // Shadow-buy: allocate 10% of equity
+            const investAmount = sp.equity * 0.1;
+            const units = investAmount / currentPrice;
+            sp.holdings = units;
+            sp.entryPrice = currentPrice;
+            sp.equity -= investAmount;
+            sp.entryTime = Date.now();
+        } else if (signal === 'SELL' && strength >= MIN_STRENGTH && sp.holdings > 0) {
+            // Shadow-sell: close position
+            const saleValue = sp.holdings * currentPrice;
+            const pnl = saleValue - (sp.holdings * sp.entryPrice);
+            const pnlPct = (pnl / (sp.holdings * sp.entryPrice)) * 100;
+            sp.equity += saleValue;
+            sp.closedTrades = sp.closedTrades || [];
+            sp.closedTrades.push({ entryPrice: sp.entryPrice, exitPrice: currentPrice, pnl, pnlPct, time: new Date().toISOString() });
+            if (sp.closedTrades.length > 50) sp.closedTrades.shift();
+            // Update win/loss
+            if (pnl > 0) strategy.wins++; else strategy.losses++;
+            // Update Sharpe (simplified: avg pnlPct / std of pnlPcts)
+            updateAgentSharpe(strategy);
+            sp.holdings = 0;
+            sp.entryPrice = null;
+        }
+    }
+
+    // Run tournament if enough closed trades accumulated
+    const totalClosed = strategies.reduce((sum, s) => sum + (s.shadowPortfolio?.closedTrades?.length || 0), 0);
+    const lastCycle = user.strategyTournament?.lastCycleClosedTrades || 0;
+    if (totalClosed - lastCycle >= 20) {
+        runTournamentCycle(userId);
+    }
+}
+
+function updateAgentSharpe(strategy) {
+    const trades = strategy.shadowPortfolio?.closedTrades || [];
+    if (trades.length < 3) return;
+    const returns = trades.map(t => t.pnlPct);
+    const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / returns.length;
+    const stdDev = Math.sqrt(variance);
+    strategy.sharpe = stdDev > 0 ? avg / stdDev : 0;
+}
+
+/**
+ * Tournament: rank agents, promote winners, mutate loser's parameters.
+ */
+function runTournamentCycle(userId) {
+    const user = userStore._ensureUser(userId);
+    const strategies = user.strategies || [];
+    if (strategies.length < 2) return;
+
+    // Rank by Sharpe (desc), then win rate as tiebreaker
+    const ranked = [...strategies].sort((a, b) => {
+        const sharpeA = a.sharpe || 0;
+        const sharpeB = b.sharpe || 0;
+        if (Math.abs(sharpeA - sharpeB) > 0.01) return sharpeB - sharpeA;
+        const wrA = a.wins / Math.max(a.wins + a.losses, 1);
+        const wrB = b.wins / Math.max(b.wins + b.losses, 1);
+        return wrB - wrA;
     });
+
+    // Mutate bottom performer's parameters
+    const loser = ranked[ranked.length - 1];
+    if (loser && loser.id !== 'COMBINED') {
+        const mutated = mutatePameters(loser.parameters || {});
+        loser.parameters = mutated;
+        loser.generation = (loser.generation || 1) + 1;
+        loser.wins = 0;
+        loser.losses = 0;
+        loser.sharpe = 0;
+        if (loser.shadowPortfolio) {
+            loser.shadowPortfolio.equity = 100000;
+            loser.shadowPortfolio.holdings = 0;
+            loser.shadowPortfolio.closedTrades = [];
+        }
+        console.log(`🧬 Tournament: ${loser.name} mutated to gen ${loser.generation}`);
+    }
+
+    if (!user.strategyTournament) user.strategyTournament = {};
+    user.strategyTournament.lastCycleClosedTrades = strategies.reduce((sum, s) =>
+        sum + (s.shadowPortfolio?.closedTrades?.length || 0), 0);
+
+    console.log(`🏆 Tournament cycle: ${ranked.map(s => `${s.name}(${(s.sharpe || 0).toFixed(2)})`).join(' > ')}`);
+}
+
+function mutatePameters(params) {
+    const mutate = (val, min, max) => {
+        if (val == null) return null;
+        const delta = val * (Math.random() * 0.3 - 0.15); // ±15%
+        return Math.max(min, Math.min(max, Math.round(val + delta)));
+    };
+    return {
+        ...params,
+        fastPeriod:      mutate(params.fastPeriod || 5, 3, 10),
+        slowPeriod:      mutate(params.slowPeriod || 20, 10, 40),
+        rsiPeriod:       mutate(params.rsiPeriod || 14, 8, 21),
+        oversold:        mutate(params.oversold || 32, 20, 40),
+        overbought:      mutate(params.overbought || 68, 60, 80),
+        fastEma:         mutate(params.fastEma || 8, 5, 15),
+        slowEma:         mutate(params.slowEma || 21, 15, 40),
+        adxThreshold:    mutate(params.adxThreshold || 20, 15, 30),
+        fearBuyThreshold:mutate(params.fearBuyThreshold || 30, 20, 40),
+        greedSellThreshold: mutate(params.greedSellThreshold || 70, 60, 80),
+    };
+}
+
+/**
+ * Record a lesson for a specific agent after a trade autopsy.
+ */
+function recordAgentLesson(userId, agentId, lesson) {
+    const user = userStore._ensureUser(userId);
+    const strategy = (user.strategies || []).find(s => s.id === agentId);
+    if (!strategy) return;
+    if (!strategy.lessons) strategy.lessons = [];
+    strategy.lessons.unshift({ lesson, time: new Date().toISOString() });
+    if (strategy.lessons.length > 10) strategy.lessons.pop();
 }
 
 module.exports = {
-    ensureStrategies,
-    evaluateAllStrategies,
-    getWinningStrategy,
-    getStrategyConsensus
+    getAgentConsensus,
+    tickShadowPortfolios,
+    runTournamentCycle,
+    recordAgentLesson,
+    computeMomentumSignal,
+    computeMeanReversionSignal,
+    computeTrendSignal,
+    computeSentimentSignal,
 };
