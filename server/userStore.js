@@ -195,6 +195,11 @@ class UserStore {
         // Reset circuit breaker per-product
         user.circuitBreaker.tripped = false;
         user.circuitBreaker.reason = '';
+
+        // Clear absolute price targets — they were set for the previous product's price scale
+        // (e.g. a $2.657 DOGE TP must not fire when switching to $77k BTC)
+        user.riskSettings.takeProfitPrice = null;
+        user.riskSettings.stopLossPrice = null;
     }
 
     setTradingMode(userId, mode) {
@@ -525,6 +530,10 @@ class UserStore {
         }
         if (loaded.riskSettings && Object.keys(loaded.riskSettings).length > 0) {
             Object.assign(user.riskSettings, loaded.riskSettings);
+            // Always clear absolute price targets on restore — these are per-session values
+            // tied to a specific product price. A $2.657 DOGE target must not trigger on BTC.
+            user.riskSettings.takeProfitPrice = null;
+            user.riskSettings.stopLossPrice = null;
         }
         if (loaded.circuitBreaker && Object.keys(loaded.circuitBreaker).length > 0) {
             Object.assign(user.circuitBreaker, loaded.circuitBreaker);
@@ -532,6 +541,10 @@ class UserStore {
             // halt the engine immediately on reconnect. Will re-trip if conditions warrant.
             user.circuitBreaker.tripped = false;
             user.circuitBreaker.reason = '';
+            // Enforce minimum 20% threshold — old DB rows may have 5% which is too tight
+            if ((user.circuitBreaker.maxDrawdownPercent || 0) < 20) {
+                user.circuitBreaker.maxDrawdownPercent = 20.0;
+            }
         }
         if (Array.isArray(loaded.strategies) && loaded.strategies.length > 0) {
             user.strategies = loaded.strategies;
