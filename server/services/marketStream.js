@@ -104,7 +104,25 @@ function ensureMarketConnection() {
     isSubscribed = false;
     marketWs = new WebSocket(MARKET_WS_URL);
 
-    marketWs.on('open', subscribeToAllProducts);
+    let heartbeatInterval = null;
+
+    marketWs.on('open', () => {
+        subscribeToAllProducts();
+        // Send a ping every 30s to keep the connection alive on Railway
+        heartbeatInterval = setInterval(() => {
+            if (marketWs && marketWs.readyState === WebSocket.OPEN) {
+                try { marketWs.ping(); } catch {}
+            } else {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+            }
+        }, 30000);
+    });
+
+    marketWs.on('pong', () => {
+        // Successful pong means connection is healthy — reset backoff
+        reconnectDelay = 5000;
+    });
 
     marketWs.on('message', (raw) => {
         try {
@@ -119,6 +137,7 @@ function ensureMarketConnection() {
 
     marketWs.on('error', (err) => console.error('Market WS Error:', err.message));
     marketWs.on('close', (code, reason) => {
+        if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
         marketWs = null;
         isSubscribed = false;
         const reasonStr = reason?.toString() || 'no reason';

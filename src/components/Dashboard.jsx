@@ -32,10 +32,23 @@ const FALLBACK_PRODUCTS = [
 
 export default function Dashboard() {
     const {
-        currentPrice, aiStatus, trades, balance, assetHoldings,
+        currentPrice, aiStatus, aiThesis, trades, balance, assetHoldings,
         isLiveMode, marketHistory, selectedProduct,
-        strategies, availableProducts, setAvailableProducts
+        availableProducts, setAvailableProducts, lastTickTime
     } = useStore();
+
+    // Stale data detection — show reconnecting badge if no TICK for > 8s
+    const [isStale, setIsStale] = useState(false);
+    useEffect(() => {
+        const check = setInterval(() => {
+            if (lastTickTime > 0 && Date.now() - lastTickTime > 8000) {
+                setIsStale(true);
+            } else {
+                setIsStale(false);
+            }
+        }, 2000);
+        return () => clearInterval(check);
+    }, [lastTickTime]);
 
     // Fetch full product catalog on mount
     useEffect(() => {
@@ -56,8 +69,6 @@ export default function Dashboard() {
         }, 5 * 60 * 1000);
         return () => clearInterval(t);
     }, []);
-
-    const winningStrategy = strategies?.filter(s => s.status === 'active').sort((a, b) => b.sharpe - a.sharpe)[0];
 
     const chartContainerRef = useRef();
     const lineSeriesRef = useRef(null);
@@ -244,6 +255,25 @@ export default function Dashboard() {
                 </div>
             </motion.div>
 
+            {/* Current Thesis / AI Thought Process */}
+            {aiThesis && (
+                <motion.div variants={itemVariants} className="glass-panel" style={{
+                    marginBottom: '1rem',
+                    padding: '1rem',
+                    border: '1px solid rgba(10, 132, 255, 0.3)',
+                    background: 'rgba(10, 132, 255, 0.05)',
+                    borderRadius: '12px'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 600 }}>
+                        <Brain size={16} />
+                        CURRENT THESIS
+                    </div>
+                    <div style={{ color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+                        {aiThesis}
+                    </div>
+                </motion.div>
+            )}
+
             {/* Holdings quick-stat */}
             {assetHoldings > 0 && (
                 <motion.div variants={itemVariants} style={{
@@ -356,8 +386,8 @@ export default function Dashboard() {
                 <motion.div className="glass-panel widget chart-container" variants={itemVariants}>
                     <div className="widget-header">
                         <h2 className="widget-title">
-                            <TrendingUp size={20} />
-                            {winningStrategy ? `${winningStrategy.name}` : 'Quant Core Engine'}
+                            <Brain size={20} color="var(--accent-blue)" />
+                            LLM Alpha Engine
                         </h2>
 
                         {/* Instrument Selector — searchable full catalog */}
@@ -427,9 +457,15 @@ export default function Dashboard() {
                         marginBottom: '1rem', fontFamily: 'var(--font-mono)'
                     }}>
                         <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{activeProduct.base} LIVE CHART</span>
-                        <span style={{ fontSize: '0.85rem', color: currentPrice > 0 ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
-                            ● {currentPrice > 0 ? 'STREAMING' : 'WAITING FOR DATA'}
-                        </span>
+                        {isStale ? (
+                            <span style={{ fontSize: '0.85rem', color: '#FF9F0A', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                ◌ RECONNECTING…
+                            </span>
+                        ) : (
+                            <span style={{ fontSize: '0.85rem', color: currentPrice > 0 ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
+                                ● {currentPrice > 0 ? 'STREAMING' : 'WAITING FOR DATA'}
+                            </span>
+                        )}
                     </div>
                     {/* Tooltip Overlay */}
                     <div

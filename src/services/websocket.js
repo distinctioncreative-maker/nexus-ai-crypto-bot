@@ -32,6 +32,7 @@ export const initWebSocket = async () => {
                     value: message.payload.price
                 });
                 store.setCurrentPrice(message.payload.price);
+                store.setLastTickTime(Date.now());
                 // Track price per product so Portfolio can show P&L for selected product
                 if (message.payload.product) {
                     store.updateProductPrices({ [message.payload.product]: message.payload.price });
@@ -86,6 +87,10 @@ export const initWebSocket = async () => {
 
             case 'AI_STATUS':
                 store.setAiStatus(message.payload);
+                break;
+
+            case 'AI_THESIS':
+                store.setAiThesis(message.payload);
                 break;
 
             case 'TRADE_EXEC':

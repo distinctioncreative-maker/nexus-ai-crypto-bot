@@ -30,12 +30,16 @@ export const useStore = create((set) => ({
     setCurrentPrice: (price) => set({ currentPrice: price }),
     marketHistory: [],
     addMarketPoint: (point) => set((state) => {
+        const last = state.marketHistory[state.marketHistory.length - 1];
+        if (last && last.value === point.value) return {}; // skip duplicate price
         const newHistory = [...state.marketHistory, point];
         if (newHistory.length > 500) newHistory.shift();
         return { marketHistory: newHistory };
     }),
     clearMarketHistory: () => set({ marketHistory: [], currentPrice: 0 }),
     setMarketHistory: (points) => set({ marketHistory: points }),
+    lastTickTime: 0,
+    setLastTickTime: (t) => set({ lastTickTime: t }),
 
     // Portfolio State
     balance: 0,
