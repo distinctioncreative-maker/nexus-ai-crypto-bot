@@ -11,6 +11,7 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:14b';
 /**
  * Call AI: uses Groq if GROQ_API_KEY is set, otherwise falls back to local Ollama.
  * Returns the response text, or throws on error.
+ * Retries up to 3 times on 429 (rate limit) with exponential backoff.
  */
 async function aiChat(systemPrompt, userContent, jsonMode = false, maxTokens = 500) {
     if (GROQ_API_KEY) {
@@ -25,11 +26,27 @@ async function aiChat(systemPrompt, userContent, jsonMode = false, maxTokens = 5
         };
         if (jsonMode) body.response_format = { type: 'json_object' };
 
-        const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', body, {
-            headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-            timeout: 60000
-        });
-        return res.data?.choices?.[0]?.message?.content || '';
+        const maxRetries = 3;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', body, {
+                    headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+                    timeout: 60000
+                });
+                return res.data?.choices?.[0]?.message?.content || '';
+            } catch (err) {
+                const status = err.response?.status;
+                if (status === 429 && attempt < maxRetries - 1) {
+                    // Groq rate limit — honour Retry-After header if present, else backoff
+                    const retryAfter = parseInt(err.response?.headers?.['retry-after'] || '0', 10);
+                    const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.pow(2, attempt + 1) * 1000;
+                    console.warn(`Groq 429 rate limit — retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+                    await new Promise(r => setTimeout(r, waitMs));
+                    continue;
+                }
+                throw err;
+            }
+        }
     }
 
     // Fallback: local Ollama
@@ -346,8 +363,8 @@ Important: Reference the conversation history and what your fellow agents say. S
     const orionAgent = AGENT_PERSONAS.find(a => a.id === 'COMBINED');
     const subAgentResponses = {};
 
-    // Round 1: Sub-agents respond in parallel
-    const agentCalls = subAgents.map(async (agent) => {
+    // Round 1: Sub-agents respond sequentially to avoid Groq 429 burst
+    for (const agent of subAgents) {
         // Each agent gets context of what other agents have said in history
         const priorAgentMessages = recentHistory
             .filter(m => m.role === 'agent' && m.agentName !== agent.name)
@@ -367,9 +384,7 @@ Important: Reference the conversation history and what your fellow agents say. S
             subAgentResponses[agent.name] = `[offline: ${err.message}]`;
             onAgentResponse(agent.id, agent.name, agent.role, agent.color, subAgentResponses[agent.name]);
         }
-    });
-
-    await Promise.allSettled(agentCalls);
+    }
 
     // Round 2: Orion synthesizes the full debate
     const debateContext = Object.entries(subAgentResponses)
