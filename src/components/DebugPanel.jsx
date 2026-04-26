@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Bug, Trash2, Wifi, WifiOff } from 'lucide-react';
+import { X, Bug, Trash2, Wifi, WifiOff, Copy, Check } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { apiUrl } from '../lib/api';
 
@@ -49,6 +49,7 @@ export default function DebugPanel() {
     const [, forceUpdate] = useState(0);
     const [serverInfo, setServerInfo] = useState(null);
     const [serverError, setServerError] = useState('');
+    const [copied, setCopied] = useState(false);
     const { wsConnected } = useStore();
     const bottomRef = useRef(null);
 
@@ -81,9 +82,21 @@ export default function DebugPanel() {
         }
     };
 
+    const copyAll = () => {
+        const header = `=== Quant Debug Log — ${new Date().toISOString()} ===\n`;
+        const body = logs.map(l =>
+            `[${l.ts}] [${l.type.toUpperCase()}] ${l.message}${l.data ? '\n  ' + l.data : ''}`
+        ).join('\n');
+        navigator.clipboard.writeText(header + body).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+
     const typeColor = {
         api: 'var(--accent-blue)',
         error: 'var(--accent-red)',
+        warn: 'var(--accent-orange)',
         ws: 'var(--accent-green)',
         info: 'var(--text-secondary)',
     };
@@ -131,6 +144,14 @@ export default function DebugPanel() {
                     {wsConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
                     WS {wsConnected ? 'connected' : 'disconnected'}
                 </span>
+                <button
+                    onClick={copyAll}
+                    title="Copy all logs to clipboard"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: copied ? 'var(--accent-green)' : 'var(--text-secondary)', padding: 2, display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                >
+                    {copied ? <Check size={13} /> : <Copy size={13} />}
+                    <span style={{ fontSize: '0.65rem' }}>{copied ? 'Copied!' : 'Copy'}</span>
+                </button>
                 <button onClick={() => { logs.length = 0; forceUpdate(n => n + 1); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 2 }}>
                     <Trash2 size={13} />
                 </button>

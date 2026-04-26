@@ -440,6 +440,13 @@ function startUserStream(userId, broadcastFn, initialProduct, initialWatchlist) 
             // Only re-broadcast the alert every 60s — not every 2s tick
             if (now - lastKillAlertTime > 60000) {
                 broadcastFn('KILL_SWITCH_ALERT', { reason });
+                broadcastFn('SERVER_LOG', {
+                    level: 'warn',
+                    source: 'circuitBreaker',
+                    message: `Kill switch / circuit breaker active: ${reason}`,
+                    detail: `killSwitch=${user.killSwitch} tripped=${user.circuitBreaker.tripped} maxDrawdown=${user.circuitBreaker.maxDrawdownPercent}%`,
+                    ts: Date.now(),
+                });
                 lastKillAlertTime = now;
             }
             broadcastFn('AI_STATUS', `🛑 Halted: ${reason}`);
@@ -520,8 +527,17 @@ function startUserStream(userId, broadcastFn, initialProduct, initialWatchlist) 
         let statusParts = [];
         for (const result of evalResults) {
             if (result.status === 'rejected' || !result.value?.decision) {
-                const pid = result.value?.productId || '?';
-                console.warn(`AI eval failed for ${pid}:`, result.reason?.message);
+                const pid = result.value?.productId || (result.reason?.productId) || '?';
+                const errMsg = result.reason?.message || result.reason?.toString() || 'unknown error';
+                const errStack = result.reason?.stack ? result.reason.stack.split('\n').slice(0, 3).join(' | ') : '';
+                console.warn(`AI eval failed for ${pid}:`, errMsg);
+                broadcastFn('SERVER_LOG', {
+                    level: 'error',
+                    source: 'strategyEngine',
+                    message: `AI eval failed for ${pid}: ${errMsg}`,
+                    detail: errStack,
+                    ts: Date.now(),
+                });
                 continue;
             }
             const { productId, decision, price: evalPrice, history: evalHistory } = result.value;

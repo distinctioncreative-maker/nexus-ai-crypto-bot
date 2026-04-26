@@ -1,6 +1,7 @@
 import { useStore } from '../store/useStore';
 import { getAccessToken } from '../lib/supabase';
 import { wsUrl as getBackendWsUrl } from '../lib/api';
+import { debugLog } from '../components/DebugPanel';
 
 let ws = null;
 let deliberateClose = false;
@@ -19,6 +20,7 @@ export const initWebSocket = async () => {
         useStore.getState().setWsConnected(true);
         useStore.getState().setAiStatus('🟢 Active — Streaming Intelligence');
         console.log("WebSocket Connected to Quant Core");
+        debugLog('ws', '🟢 WS connected');
     };
 
     ws.onmessage = (event) => {
@@ -108,6 +110,7 @@ export const initWebSocket = async () => {
 
             case 'AI_STATUS':
                 store.setAiStatus(message.payload);
+                debugLog('ws', `AI_STATUS: ${message.payload}`);
                 break;
 
             case 'AI_THESIS':
@@ -126,6 +129,7 @@ export const initWebSocket = async () => {
                     reason: message.payload.reason,
                     timestamp: new Date().toISOString()
                 });
+                debugLog('info', `💱 TRADE ${message.payload.type} ${message.payload.amount} @ $${message.payload.price} — ${message.payload.reason}`, { product: message.payload.product, fee: message.payload.fee, newBalance: message.payload.newBalance });
                 break;
 
             case 'PENDING_TRADE':
@@ -142,7 +146,18 @@ export const initWebSocket = async () => {
 
             case 'KILL_SWITCH_ALERT':
                 store.setKillSwitchActive(!!message.payload?.reason, message.payload?.reason || '');
+                debugLog('error', `🛑 KILL_SWITCH_ALERT: ${message.payload?.reason || '(no reason)'}`);
                 break;
+
+            case 'SERVER_LOG': {
+                const { level, source, message: msg, detail } = message.payload || {};
+                const icon = level === 'error' ? '✗' : level === 'warn' ? '⚠' : 'ℹ';
+                debugLog(level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info',
+                    `${icon} [${source}] ${msg}`,
+                    detail ? { detail } : null
+                );
+                break;
+            }
 
             case 'SITUATION_ROOM_AGENT':
                 if (ws._situationRoomOnAgent) {
