@@ -24,6 +24,7 @@ import PendingTradeCard from './components/PendingTradeCard';
 import LiveModeConfirmModal from './components/LiveModeConfirmModal';
 import Tutorial from './components/Tutorial';
 import DebugPanel from './components/DebugPanel';
+import ChangelogPage from './components/ChangelogPage';
 
 function App() {
   const {
@@ -261,6 +262,9 @@ function App() {
             <NavLink to="/situation-room" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
               <Radio size={22}/> <span className="nav-label">Situation Room</span>
             </NavLink>
+            <NavLink to="/changelog" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
+              <BookOpen size={22}/> <span className="nav-label">Docs</span>
+            </NavLink>
           </nav>
 
           <main className="main-content-area">
@@ -273,6 +277,7 @@ function App() {
                 <Route path="/agents" element={<AgentsPage />} />
                 <Route path="/backtest" element={<BacktestModule />} />
                 <Route path="/situation-room" element={<SituationRoom />} />
+                <Route path="/changelog" element={<ChangelogPage />} />
               </Routes>
             </ErrorBoundary>
           </main>
