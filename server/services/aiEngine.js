@@ -1,6 +1,6 @@
 const userStore = require('../userStore');
 const axios = require('axios');
-const { getSignals } = require('./signalEngine');
+const { getSignals, computeRotationScores } = require('./signalEngine');
 const { getAgentConsensus, tickShadowPortfolios, recordAgentLesson } = require('./strategyEngine');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -74,6 +74,10 @@ async function evaluateMarketSignal(userId, candles, productId) {
         getSignals().catch(() => null),
         require('./signalEngine').getNews().catch(() => [])
     ]);
+    // Cache F&G on user object so riskEngine can apply size multiplier without extra API call
+    if (signals?.fearGreed?.value != null) {
+        userStore._ensureUser(userId)._lastFearGreed = signals.fearGreed.value;
+    }
 
     // candles is an array of {time, value/close, open, high, low, volume}
     const currentPrice = candles.length > 0 ? candles[candles.length - 1].value : 0;
@@ -160,6 +164,7 @@ Fear & Greed Index: ${fearGreedStr}
 DeFi TVL 7d Change: ${tvlStr}
 Polymarket BTC Bull Probability: ${polyStr}
 Composite Score: ${compositeStr}
+Momentum Rotation (7d/30d): ${((() => { try { const r = computeRotationScores(userStore._ensureUser(userId)._productPriceHistory || {}); return r.ranked?.join(' > ') || 'N/A'; } catch { return 'N/A'; } })())}
 ${newsContext}${agentLessonsSection}
 === RISK CONTEXT ===
 Daily P&L today: $${dailyPnl.toFixed(2)}

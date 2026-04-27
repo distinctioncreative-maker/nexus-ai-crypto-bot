@@ -74,6 +74,7 @@ class UserStore {
                     { id: 'MEAN_REVERSION',  name: 'Vera',  role: 'Mean Reversion Quant',         color: '#627EEA', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
                     { id: 'TREND_FOLLOWING', name: 'Rex',   role: 'Trend Following Strategist',   color: '#9945FF', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
                     { id: 'SENTIMENT_DRIVEN',name: 'Luna',  role: 'Sentiment & Macro Intelligence',color: '#34C759', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
+                    { id: 'VOLUME_MACD',     name: 'Nova',  role: 'Volume & MACD Divergence',     color: '#FF9F0A', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
                     { id: 'COMBINED',        name: 'Orion', role: 'Chief Strategist',             color: '#0A84FF', status: 'active', wins: 0, losses: 0, sharpe: 0, generation: 1, parameters: {}, lessons: [], lastSignal: null, shadowPortfolio: { equity: 100000, holdings: 0, closedTrades: [] } },
                 ],
                 strategyTournament: {

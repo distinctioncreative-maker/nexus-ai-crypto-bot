@@ -320,4 +320,33 @@ async function getNews() {
     }
 }
 
-module.exports = { getSignals, getNews };
+/**
+ * Rank watchlist coins by 7-day and 30-day momentum (dual momentum per PDF §4.1.2).
+ * priceHistory: { 'BTC-USD': [{ time, value }], ... }
+ */
+function computeRotationScores(priceHistory) {
+    const scores = {};
+    for (const [coin, history] of Object.entries(priceHistory || {})) {
+        if (!Array.isArray(history) || history.length < 2) continue;
+        const prices = history.map(h => h.value || h.close || 0).filter(Boolean);
+        if (prices.length < 2) continue;
+        const current = prices[prices.length - 1];
+        const ago7  = prices.length >= 7  ? prices[prices.length - 7]  : prices[0];
+        const ago30 = prices.length >= 30 ? prices[prices.length - 30] : prices[0];
+        const ret7d  = ago7  > 0 ? ((current - ago7)  / ago7)  * 100 : 0;
+        const ret30d = ago30 > 0 ? ((current - ago30) / ago30) * 100 : 0;
+        scores[coin] = {
+            ret7d:  parseFloat(ret7d.toFixed(2)),
+            ret30d: parseFloat(ret30d.toFixed(2)),
+            score:  parseFloat((ret7d * 0.6 + ret30d * 0.4).toFixed(2)),
+        };
+    }
+    const ranked = Object.entries(scores).sort((a, b) => b[1].score - a[1].score);
+    return {
+        scores,
+        ranked: ranked.map(([coin, s]) => `${coin.split('-')[0]}(${s.score > 0 ? '+' : ''}${s.score})`),
+        leader: ranked[0]?.[0] || null,
+    };
+}
+
+module.exports = { getSignals, getNews, computeRotationScores };

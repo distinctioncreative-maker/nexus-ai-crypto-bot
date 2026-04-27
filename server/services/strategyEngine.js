@@ -87,90 +87,207 @@ function adx(highs, lows, closes, period = 14) {
     return dx;
 }
 
+// ─── Additional Technical Helpers ────────────────────────────────────────────
+
+// ATR — standalone (also needed for position sizing)
+function atr(highs, lows, closes, period = 14) {
+    if (closes.length < period + 1) return null;
+    const trs = [];
+    for (let i = 1; i < closes.length; i++) {
+        trs.push(Math.max(
+            highs[i] - lows[i],
+            Math.abs(highs[i] - closes[i - 1]),
+            Math.abs(lows[i] - closes[i - 1])
+        ));
+    }
+    return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
+}
+
+// MACD — crypto-optimized default (5/35/5) beats standard 12/26/9 per Kang 2021
+function macd(prices, fastPeriod = 5, slowPeriod = 35, signalPeriod = 5) {
+    if (prices.length < slowPeriod + signalPeriod) return null;
+    const macdLine = [];
+    for (let i = slowPeriod; i <= prices.length; i++) {
+        const slice = prices.slice(0, i);
+        const fast = ema(slice, fastPeriod);
+        const slow = ema(slice, slowPeriod);
+        if (fast !== null && slow !== null) macdLine.push(fast - slow);
+    }
+    if (macdLine.length < signalPeriod) return null;
+    const signalLine = ema(macdLine, signalPeriod);
+    if (signalLine === null) return null;
+    const histogram = macdLine[macdLine.length - 1] - signalLine;
+    return { macdLine: macdLine[macdLine.length - 1], signalLine, histogram };
+}
+
+// OBV — On-Balance Volume: confirms or denies price moves with volume flow
+function obv(closes, volumes) {
+    if (!volumes || closes.length !== volumes.length || closes.length < 2) return null;
+    let obvVal = 0;
+    const series = [0];
+    for (let i = 1; i < closes.length; i++) {
+        if (closes[i] > closes[i - 1]) obvVal += (volumes[i] || 0);
+        else if (closes[i] < closes[i - 1]) obvVal -= (volumes[i] || 0);
+        series.push(obvVal);
+    }
+    const recent = series.slice(-14);
+    const slope = (recent[recent.length - 1] - recent[0]) / Math.max(recent.length, 1);
+    return { value: obvVal, trend: slope > 0 ? 'UP' : slope < 0 ? 'DOWN' : 'FLAT', slope };
+}
+
+// BB Width — normalized band width; squeeze = bands compressing = volatility coiling
+function bbWidth(prices, period = 20) {
+    const bb = bollingerBands(prices, period, 2);
+    if (!bb || bb.middle === 0) return null;
+    return (bb.upper - bb.lower) / bb.middle;
+}
+
 // ─── Per-Agent Signal Computation ────────────────────────────────────────────
 
 /**
- * Atlas — Momentum via fast/slow MA crossover + volume confirmation
+ * Atlas — Momentum via EMA 9/21 crossover + MACD(5/35/5) confirmation + volume spike
+ * Upgraded from SMA 5/20: EMA reacts faster to 24/7 crypto markets
  */
 function computeMomentumSignal(candles, agentParams = {}) {
-    const fastPeriod = agentParams.fastPeriod || 5;
-    const slowPeriod = agentParams.slowPeriod || 20;
-    const closes = candles.map(c => c.value);
+    const fastPeriod = agentParams.fastPeriod || 9;
+    const slowPeriod = agentParams.slowPeriod || 21;
+    const closes  = candles.map(c => c.value);
+    const volumes = candles.map(c => c.volume || 0);
 
-    const fastMA = sma(closes, fastPeriod);
-    const slowMA = sma(closes, slowPeriod);
-    if (fastMA === null || slowMA === null) return { signal: 'HOLD', strength: 0, reason: 'Insufficient data' };
+    const fastEMA     = ema(closes, fastPeriod);
+    const slowEMA     = ema(closes, slowPeriod);
+    const prevFastEMA = ema(closes.slice(0, -1), fastPeriod);
+    const prevSlowEMA = ema(closes.slice(0, -1), slowPeriod);
+    const macdResult  = macd(closes, 5, 35, 5);
 
-    const gap = (fastMA - slowMA) / slowMA;
-    const prevFastMA = sma(closes.slice(0, -1), fastPeriod);
-    const prevSlowMA = sma(closes.slice(0, -1), slowPeriod);
+    // Volume confirmation: current vs 10-bar average
+    const avgVol  = volumes.slice(-10).reduce((a, b) => a + b, 0) / 10;
+    const volSpike = avgVol > 0 && volumes[volumes.length - 1] > avgVol * 1.5;
 
-    if (fastMA > slowMA && prevFastMA !== null && prevFastMA <= prevSlowMA && gap > 0.001) {
-        return { signal: 'BUY', strength: Math.min(gap * 1000, 100), reason: `MA crossover bullish: fast(${fastPeriod})=$${fastMA.toFixed(2)} > slow(${slowPeriod})=$${slowMA.toFixed(2)}` };
+    if (!fastEMA || !slowEMA) return { signal: 'HOLD', strength: 0, reason: 'Insufficient data' };
+
+    const crossedBullish = fastEMA > slowEMA && prevFastEMA !== null && prevFastEMA <= prevSlowEMA;
+    const crossedBearish = fastEMA < slowEMA && prevFastEMA !== null && prevFastEMA >= prevSlowEMA;
+    const macdBull = macdResult?.histogram > 0;
+    const macdBear = macdResult?.histogram < 0;
+    const gap = (fastEMA - slowEMA) / slowEMA;
+
+    if ((crossedBullish || (fastEMA > slowEMA && macdBull)) && macdBull) {
+        const strength = Math.min(Math.abs(gap) * 2000 + (volSpike ? 20 : 0), 100);
+        return { signal: 'BUY', strength, reason: `EMA${fastPeriod}/EMA${slowPeriod} bullish${crossedBullish ? ' crossover' : ''}, MACD hist=+${macdResult.histogram.toFixed(4)}${volSpike ? ', vol spike' : ''}` };
     }
-    if (fastMA < slowMA && prevFastMA !== null && prevFastMA >= prevSlowMA && gap < -0.001) {
-        return { signal: 'SELL', strength: Math.min(Math.abs(gap) * 1000, 100), reason: `MA crossover bearish: fast(${fastPeriod})=$${fastMA.toFixed(2)} < slow(${slowPeriod})=$${slowMA.toFixed(2)}` };
+    if ((crossedBearish || (fastEMA < slowEMA && macdBear)) && macdBear) {
+        const strength = Math.min(Math.abs(gap) * 2000 + (volSpike ? 20 : 0), 100);
+        return { signal: 'SELL', strength, reason: `EMA${fastPeriod}/EMA${slowPeriod} bearish${crossedBearish ? ' crossover' : ''}, MACD hist=${macdResult.histogram.toFixed(4)}${volSpike ? ', vol spike' : ''}` };
     }
-    return { signal: 'HOLD', strength: Math.abs(gap) * 500, reason: `MA trend ${gap > 0 ? 'bullish' : 'bearish'} but no fresh crossover` };
+    return { signal: 'HOLD', strength: Math.abs(gap) * 500, reason: `EMA gap ${gap > 0 ? '+' : ''}${(gap * 100).toFixed(2)}%, MACD=${macdResult?.histogram?.toFixed(4) ?? 'n/a'} — no confirmation` };
 }
 
 /**
- * Vera — Mean Reversion via RSI + Bollinger Bands
+ * Vera — Mean Reversion via RSI 14 (30/70) + BB + OBV divergence + squeeze detection
+ * Upgraded: standard thresholds, added OBV divergence and band compression signals
  */
 function computeMeanReversionSignal(candles, agentParams = {}) {
-    const rsiPeriod = agentParams.rsiPeriod || 14;
-    const oversold = agentParams.oversold || 32;
-    const overbought = agentParams.overbought || 68;
-    const closes = candles.map(c => c.value);
+    const rsiPeriod  = agentParams.rsiPeriod  || 14;
+    const oversold   = agentParams.oversold   || 30;
+    const overbought = agentParams.overbought || 70;
+    const closes  = candles.map(c => c.value);
+    const volumes = candles.map(c => c.volume || 0);
 
-    const rsiVal = rsi(closes, rsiPeriod);
-    const bb = bollingerBands(closes, 20, 2);
+    const rsiVal    = rsi(closes, rsiPeriod);
+    const bb        = bollingerBands(closes, 20, 2);
+    const width     = bbWidth(closes, 20);
+    const prevWidth = bbWidth(closes.slice(0, -3), 20);
+    const obvResult = obv(closes, volumes);
     const currentPrice = closes[closes.length - 1];
 
     if (rsiVal === null || !bb) return { signal: 'HOLD', strength: 0, reason: 'Insufficient data' };
 
-    const bbPosition = (currentPrice - bb.lower) / (bb.upper - bb.lower); // 0=lower, 1=upper
+    const bbPosition = (currentPrice - bb.lower) / (bb.upper - bb.lower);
+    const squeeze = width !== null && prevWidth !== null && width < prevWidth * 0.85;
+    const bullishDiv = bbPosition < 0.3 && obvResult?.trend === 'UP';
+    const bearishDiv = bbPosition > 0.7 && obvResult?.trend === 'DOWN';
 
     if (rsiVal < oversold && bbPosition < 0.25) {
-        const strength = ((oversold - rsiVal) / oversold) * 100;
-        return { signal: 'BUY', strength, reason: `RSI=${rsiVal.toFixed(1)} oversold + price near BB lower ($${bb.lower.toFixed(2)})` };
+        const strength = ((oversold - rsiVal) / oversold) * 100 + (bullishDiv ? 15 : 0);
+        return { signal: 'BUY', strength, reason: `RSI=${rsiVal.toFixed(1)} oversold + BB lower${bullishDiv ? ' + OBV bullish div' : ''}${squeeze ? ' + BB squeeze' : ''}` };
     }
     if (rsiVal > overbought && bbPosition > 0.75) {
-        const strength = ((rsiVal - overbought) / (100 - overbought)) * 100;
-        return { signal: 'SELL', strength, reason: `RSI=${rsiVal.toFixed(1)} overbought + price near BB upper ($${bb.upper.toFixed(2)})` };
+        const strength = ((rsiVal - overbought) / (100 - overbought)) * 100 + (bearishDiv ? 15 : 0);
+        return { signal: 'SELL', strength, reason: `RSI=${rsiVal.toFixed(1)} overbought + BB upper${bearishDiv ? ' + OBV bearish div' : ''}` };
     }
-    return { signal: 'HOLD', strength: 0, reason: `RSI=${rsiVal.toFixed(1)}, BB position=${(bbPosition * 100).toFixed(0)}% — no extreme` };
+    return { signal: 'HOLD', strength: 0, reason: `RSI=${rsiVal.toFixed(1)}, BB pos=${(bbPosition * 100).toFixed(0)}%${squeeze ? ' [SQUEEZE]' : ''}, OBV=${obvResult?.trend ?? 'n/a'}` };
 }
 
 /**
- * Rex — Trend Following via EMA cloud + ADX
+ * Rex — Trend Following via EMA cloud + ADX + MACD confirmation
+ * Upgraded: MACD filter reduces false signals in choppy/ranging markets
  */
 function computeTrendSignal(candles, agentParams = {}) {
-    const fastEma = agentParams.fastEma || 8;
-    const slowEma = agentParams.slowEma || 21;
+    const fastEma     = agentParams.fastEma     || 9;
+    const slowEma     = agentParams.slowEma     || 21;
     const adxThreshold = agentParams.adxThreshold || 20;
     const closes = candles.map(c => c.value);
     const highs  = candles.map(c => c.high || c.value);
-    const lows   = candles.map(c => c.low || c.value);
+    const lows   = candles.map(c => c.low  || c.value);
 
-    const emaFast = ema(closes, fastEma);
-    const emaSlow = ema(closes, slowEma);
-    const adxVal  = adx(highs, lows, closes, 14);
+    const emaFast  = ema(closes, fastEma);
+    const emaSlow  = ema(closes, slowEma);
+    const adxVal   = adx(highs, lows, closes, 14);
+    const macdResult = macd(closes, 5, 35, 5);
     const currentPrice = closes[closes.length - 1];
 
     if (emaFast === null || emaSlow === null) return { signal: 'HOLD', strength: 0, reason: 'Insufficient data' };
 
     const trendStrength = adxVal || 0;
-    const priceBullish = currentPrice > emaFast && emaFast > emaSlow;
-    const priceBearish = currentPrice < emaFast && emaFast < emaSlow;
+    const priceBullish  = currentPrice > emaFast && emaFast > emaSlow;
+    const priceBearish  = currentPrice < emaFast && emaFast < emaSlow;
+    const macdConfirmsBull = macdResult?.histogram > 0;
+    const macdConfirmsBear = macdResult?.histogram < 0;
 
-    if (priceBullish && trendStrength >= adxThreshold) {
-        return { signal: 'BUY', strength: trendStrength, reason: `Price above EMA cloud (${fastEma}/${slowEma}), ADX=${adxVal?.toFixed(1)} — strong uptrend` };
+    if (priceBullish && trendStrength >= adxThreshold && macdConfirmsBull) {
+        return { signal: 'BUY', strength: trendStrength, reason: `Price above EMA${fastEma}/${slowEma} cloud, ADX=${adxVal?.toFixed(1)}, MACD confirms — strong uptrend` };
     }
-    if (priceBearish && trendStrength >= adxThreshold) {
-        return { signal: 'SELL', strength: trendStrength, reason: `Price below EMA cloud (${fastEma}/${slowEma}), ADX=${adxVal?.toFixed(1)} — strong downtrend` };
+    if (priceBearish && trendStrength >= adxThreshold && macdConfirmsBear) {
+        return { signal: 'SELL', strength: trendStrength, reason: `Price below EMA${fastEma}/${slowEma} cloud, ADX=${adxVal?.toFixed(1)}, MACD confirms — strong downtrend` };
     }
-    return { signal: 'HOLD', strength: 0, reason: `ADX=${adxVal?.toFixed(1)} (need >${adxThreshold}) — trend too weak to enter` };
+    return { signal: 'HOLD', strength: 0, reason: `ADX=${adxVal?.toFixed(1)} (need >${adxThreshold})${!macdConfirmsBull && priceBullish ? ', MACD not confirming' : ''} — no entry` };
+}
+
+/**
+ * Nova — Volume + MACD divergence (5th agent, PDF §18.2 multi-timeframe inspired)
+ * OBV accumulation/distribution + MACD momentum convergence
+ */
+function computeVolumeSignal(candles, agentParams = {}) {
+    const closes  = candles.map(c => c.value);
+    const volumes = candles.map(c => c.volume || 0);
+    const highs   = candles.map(c => c.high  || c.value);
+    const lows    = candles.map(c => c.low   || c.value);
+
+    const obvResult  = obv(closes, volumes);
+    const macdResult = macd(closes, 5, 35, 5);
+    const atrVal     = atr(highs, lows, closes, 14);
+
+    const ret7 = closes.length >= 8
+        ? (closes[closes.length - 1] / closes[closes.length - 8] - 1) * 100
+        : null;
+
+    if (!obvResult || !macdResult) return { signal: 'HOLD', strength: 0, reason: 'Insufficient data' };
+
+    const macdBull = macdResult.histogram > 0 && macdResult.macdLine > macdResult.signalLine;
+    const macdBear = macdResult.histogram < 0 && macdResult.macdLine < macdResult.signalLine;
+    const obvBull  = obvResult.trend === 'UP';
+    const obvBear  = obvResult.trend === 'DOWN';
+
+    if (macdBull && obvBull && (ret7 === null || ret7 > 0)) {
+        const strength = Math.min(Math.abs(macdResult.histogram / (atrVal || 1)) * 500, 100);
+        return { signal: 'BUY', strength, reason: `MACD hist=+${macdResult.histogram.toFixed(4)}, OBV accumulating${ret7 !== null ? `, 7p ret=+${ret7.toFixed(1)}%` : ''}` };
+    }
+    if (macdBear && obvBear && (ret7 === null || ret7 < 0)) {
+        const strength = Math.min(Math.abs(macdResult.histogram / (atrVal || 1)) * 500, 100);
+        return { signal: 'SELL', strength, reason: `MACD hist=${macdResult.histogram.toFixed(4)}, OBV distributing${ret7 !== null ? `, 7p ret=${ret7.toFixed(1)}%` : ''}` };
+    }
+    return { signal: 'HOLD', strength: 0, reason: `MACD=${macdResult.histogram.toFixed(4)}, OBV=${obvResult.trend} — no convergence` };
 }
 
 /**
@@ -255,12 +372,14 @@ function getAgentConsensus(userId, candles, signals) {
     const veraResult    = computeMeanReversionSignal(candles, getParams('MEAN_REVERSION'));
     const rexResult     = computeTrendSignal(candles, getParams('TREND_FOLLOWING'));
     const lunaResult    = computeSentimentSignal(candles, signals, getParams('SENTIMENT_DRIVEN'));
+    const novaResult    = computeVolumeSignal(candles, getParams('VOLUME_MACD'));
 
     const votes = [
         { agentId: 'MOMENTUM',        name: 'Atlas', ...atlasResult },
         { agentId: 'MEAN_REVERSION',  name: 'Vera',  ...veraResult },
         { agentId: 'TREND_FOLLOWING', name: 'Rex',   ...rexResult },
         { agentId: 'SENTIMENT_DRIVEN',name: 'Luna',  ...lunaResult },
+        { agentId: 'VOLUME_MACD',     name: 'Nova',  ...novaResult },
     ];
 
     const orionResult = computeCombinedSignal(votes, agentStats);
@@ -290,6 +409,7 @@ function tickShadowPortfolios(userId, candles, signals) {
         { id: 'MEAN_REVERSION',  fn: () => computeMeanReversionSignal(candles, strategies.find(s => s.id === 'MEAN_REVERSION')?.parameters || {}) },
         { id: 'TREND_FOLLOWING', fn: () => computeTrendSignal(candles, strategies.find(s => s.id === 'TREND_FOLLOWING')?.parameters || {}) },
         { id: 'SENTIMENT_DRIVEN',fn: () => computeSentimentSignal(candles, signals, strategies.find(s => s.id === 'SENTIMENT_DRIVEN')?.parameters || {}) },
+        { id: 'VOLUME_MACD',     fn: () => computeVolumeSignal(candles, strategies.find(s => s.id === 'VOLUME_MACD')?.parameters || {}) },
     ];
 
     const MIN_STRENGTH = 40; // only shadow-trade when signal is confident
@@ -437,4 +557,6 @@ module.exports = {
     computeMeanReversionSignal,
     computeTrendSignal,
     computeSentimentSignal,
+    computeVolumeSignal,
+    atr,
 };
