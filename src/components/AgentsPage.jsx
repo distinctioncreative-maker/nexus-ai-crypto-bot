@@ -8,6 +8,7 @@ const STRATEGY_COLORS = {
   MEAN_REVERSION:  '#627EEA',
   TREND_FOLLOWING: '#9945FF',
   SENTIMENT_DRIVEN:'#34C759',
+  VOLUME_MACD:     '#FF9F0A',
   COMBINED:        '#0A84FF',
 };
 
@@ -16,6 +17,7 @@ const STRATEGY_APPROACHES = {
   MEAN_REVERSION:  'Fades extremes using RSI. Buys oversold conditions, sells overbought — bets on price returning to mean.',
   TREND_FOLLOWING: 'Rides sustained trends with EMA cloud. Enters when price breaks meaningfully above/below the moving average.',
   SENTIMENT_DRIVEN:'Blends Fear & Greed index with RSI. Adjusts bias based on macro sentiment alongside technical signals.',
+  VOLUME_MACD:     'OBV accumulation/distribution + MACD(5/35/5) momentum convergence. Catches institutional moves before price reacts.',
   COMBINED:        'Weighted blend of MA trend, RSI, and composite sentiment. The meta-strategy that synthesises all signals.',
 };
 

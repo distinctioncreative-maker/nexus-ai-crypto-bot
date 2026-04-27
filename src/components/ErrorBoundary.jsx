@@ -31,9 +31,20 @@ export default class ErrorBoundary extends React.Component {
                     <h2 style={{ color: 'var(--accent-red)', fontSize: '1.2rem', fontWeight: 600 }}>
                         Component Error
                     </h2>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', maxWidth: 400 }}>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', maxWidth: 500, marginBottom: '0' }}>
                         {this.state.error?.message || 'An unexpected error occurred. Please refresh the page.'}
                     </p>
+                    {this.state.error?.stack && (
+                        <pre style={{
+                            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '8px', padding: '0.75rem', fontSize: '0.65rem',
+                            color: 'rgba(255,255,255,0.4)', maxWidth: '580px', width: '100%',
+                            textAlign: 'left', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                            maxHeight: '180px', overflowY: 'auto',
+                        }}>
+                            {this.state.error.stack.split('\n').slice(0, 8).join('\n')}
+                        </pre>
+                    )}
                     <button
                         onClick={() => this.setState({ hasError: false, error: null })}
                         style={{

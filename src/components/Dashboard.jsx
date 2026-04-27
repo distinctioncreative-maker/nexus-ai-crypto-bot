@@ -35,7 +35,7 @@ const FALLBACK_PRODUCTS = [
 export default function Dashboard() {
     const {
         currentPrice, aiStatus, aiThesis, trades, balance, assetHoldings,
-        isLiveMode, candleHistory, selectedProduct, watchlist,
+        isLiveMode, engineStatus, candleHistory, selectedProduct, watchlist,
         availableProducts, setAvailableProducts, lastTickTime,
         productPrices, productHoldings
     } = useStore();

@@ -162,24 +162,26 @@ export default function PortfolioPage() {
     const totalPnlPct = (totalPnl / INITIAL_BALANCE) * 100;
 
     // Equity curve: track total portfolio value (cash + holdings at trade price)
-    // Tracks total value so buying doesn't look like a loss
     const equityCurve = useMemo(() => {
         const chronological = [...trades].reverse();
         let cash = INITIAL_BALANCE;
-        const holdingsMap = {}; // productId → qty
+        const holdingsMap = {};
         const points = [{ i: 0, v: INITIAL_BALANCE }];
         for (const t of chronological) {
+            const amount = Number(t.amount) || 0;
+            const price  = Number(t.price)  || 0;
+            if (!amount || !price) continue; // skip malformed trades
             const pid = t.product || 'BTC-USD';
             if (t.type === 'BUY') {
-                cash -= t.amount * t.price * (1 + 0.007); // include fees
-                holdingsMap[pid] = (holdingsMap[pid] || 0) + t.amount;
+                cash -= amount * price * 1.007;
+                holdingsMap[pid] = (holdingsMap[pid] || 0) + amount;
             } else if (t.type === 'SELL') {
-                cash += t.amount * t.price * (1 - 0.007);
-                holdingsMap[pid] = Math.max(0, (holdingsMap[pid] || 0) - t.amount);
+                cash += amount * price * 0.993;
+                holdingsMap[pid] = Math.max(0, (holdingsMap[pid] || 0) - amount);
             }
-            // total value = cash + all holdings valued at this trade's price
-            const holdingsValue = Object.entries(holdingsMap).reduce((sum, [, qty]) => sum + qty * t.price, 0);
-            points.push({ i: points.length, v: cash + holdingsValue });
+            const holdingsValue = Object.entries(holdingsMap).reduce((sum, [, qty]) => sum + qty * price, 0);
+            const total = cash + holdingsValue;
+            if (isFinite(total)) points.push({ i: points.length, v: total });
         }
         return points.length > 1 ? points : [{ i: 0, v: INITIAL_BALANCE }];
     }, [trades]);
