@@ -4,10 +4,11 @@ import { useStore } from '../store/useStore';
 import { sendKillSwitch } from '../services/websocket';
 
 export default function KillSwitch() {
-    const { killSwitchActive, killSwitchReason, isLiveMode } = useStore();
+    const { killSwitchActive, killSwitchReason, engineStatus } = useStore();
     const [showConfirm, setShowConfirm] = useState(false);
 
-    if (!isLiveMode && !killSwitchActive) return null;
+    // Show whenever engine is running (paper OR live) or kill switch is already active
+    if (engineStatus === 'STOPPED' && !killSwitchActive) return null;
 
     const handleActivate = () => {
         sendKillSwitch(true, 'Manual kill switch — user activated');

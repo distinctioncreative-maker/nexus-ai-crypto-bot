@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Radio, TrendingUp, TrendingDown, Brain, BarChart2, Percent, RefreshCw, ExternalLink } from 'lucide-react';
+import { Radio, TrendingUp, TrendingDown, Brain, BarChart2, Percent, RefreshCw, ExternalLink, Flame, Satellite, AlertOctagon } from 'lucide-react';
 import { authFetch } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
 
@@ -401,8 +401,8 @@ export default function IntelligencePage() {
           {/* Hot Keywords from real headlines */}
           {keywords.length > 0 && (
             <div className="glass-panel" style={{ padding: '1.1rem 1.25rem' }}>
-              <div className="widget-title" style={{ marginBottom: '0.85rem' }}>
-                🔥 Trending Terms
+              <div className="widget-title" style={{ marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Flame size={13} color="var(--accent-orange)" /> Trending Terms
               </div>
               {keywords.map(k => (
                 <div key={k.word} style={{ marginBottom: '0.5rem' }}>
@@ -428,8 +428,8 @@ export default function IntelligencePage() {
           {/* Source Activity from real counts */}
           {sourceActivity.length > 0 && (
             <div className="glass-panel" style={{ padding: '1.1rem 1.25rem' }}>
-              <div className="widget-title" style={{ marginBottom: '0.85rem' }}>
-                📡 Source Activity
+              <div className="widget-title" style={{ marginBottom: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Satellite size={13} color="var(--accent-blue)" /> Source Activity
               </div>
               {sourceActivity.map(s => (
                 <div key={s.name} style={{ marginBottom: '0.5rem' }}>
@@ -453,7 +453,10 @@ export default function IntelligencePage() {
           {/* High Impact Alerts */}
           <div className="glass-panel" style={{ padding: '1.1rem 1.25rem' }}>
             <div className="widget-title" style={{ marginBottom: '0.85rem' }}>
-              🚨 High Impact <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, fontSize: '0.6rem', marginLeft: '0.3rem' }}>(Impact 7+)</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <AlertOctagon size={13} color="var(--accent-red)" /> High Impact
+                <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, fontSize: '0.6rem' }}>(Impact 7+)</span>
+              </span>
             </div>
             {alertHistory.length === 0 ? (
               <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>

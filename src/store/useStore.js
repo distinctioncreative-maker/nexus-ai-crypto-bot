@@ -16,7 +16,7 @@ export const useStore = create((set) => ({
     }),
 
     // Trading mode: FULL_AUTO | AI_ASSISTED
-    tradingMode: 'FULL_AUTO',
+    tradingMode: 'AI_ASSISTED',
     setTradingMode: (mode) => set({ tradingMode: mode }),
 
     // Instrument selection

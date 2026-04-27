@@ -156,10 +156,12 @@ export default function BacktestModule() {
             <div>
               <div style={{ fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>Strategy</div>
               <select value={strategy} onChange={e => setStrategy(e.target.value)} style={sel}>
-                <option value="MOMENTUM">Momentum MA Cross</option>
-                <option value="MEAN_REVERSION">Mean Reversion RSI</option>
-                <option value="TREND_FOLLOWING">Trend Following EMA</option>
-                <option value="COMBINED">Combined Signal</option>
+                <option value="MOMENTUM">Atlas — Momentum EMA+MACD</option>
+                <option value="MEAN_REVERSION">Vera — Mean Reversion RSI+BB</option>
+                <option value="TREND_FOLLOWING">Rex — Trend Following EMA+ADX</option>
+                <option value="SENTIMENT_DRIVEN">Luna — Sentiment &amp; Macro</option>
+                <option value="VOLUME_MACD">Nova — Volume + MACD Divergence</option>
+                <option value="COMBINED">Orion — Combined Signal</option>
               </select>
             </div>
             <div>

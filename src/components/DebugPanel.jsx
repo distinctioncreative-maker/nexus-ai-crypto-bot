@@ -123,7 +123,7 @@ export default function DebugPanel() {
     return (
         <div style={{
             position: 'fixed', bottom: 16, right: 16, zIndex: 9000,
-            width: 420, maxHeight: '70vh',
+            width: Math.min(420, (typeof window !== 'undefined' ? window.innerWidth : 420) - 16), maxHeight: '70vh',
             background: '#0a0a0d',
             border: '1px solid rgba(255,159,10,0.4)',
             borderRadius: 12,

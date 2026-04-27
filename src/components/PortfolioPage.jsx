@@ -161,17 +161,27 @@ export default function PortfolioPage() {
     const totalPnl = totalPortfolio - INITIAL_BALANCE;
     const totalPnlPct = (totalPnl / INITIAL_BALANCE) * 100;
 
-    // Equity curve from all trades
+    // Equity curve: track total portfolio value (cash + holdings at trade price)
+    // Tracks total value so buying doesn't look like a loss
     const equityCurve = useMemo(() => {
-        const reversed = [...trades].reverse();
-        let running = INITIAL_BALANCE;
-        const points = [];
-        for (const t of reversed) {
-            if (t.type === 'BUY')  running -= t.amount * t.price;
-            if (t.type === 'SELL') running += t.amount * t.price;
-            points.push({ i: points.length, v: running });
+        const chronological = [...trades].reverse();
+        let cash = INITIAL_BALANCE;
+        const holdingsMap = {}; // productId → qty
+        const points = [{ i: 0, v: INITIAL_BALANCE }];
+        for (const t of chronological) {
+            const pid = t.product || 'BTC-USD';
+            if (t.type === 'BUY') {
+                cash -= t.amount * t.price * (1 + 0.007); // include fees
+                holdingsMap[pid] = (holdingsMap[pid] || 0) + t.amount;
+            } else if (t.type === 'SELL') {
+                cash += t.amount * t.price * (1 - 0.007);
+                holdingsMap[pid] = Math.max(0, (holdingsMap[pid] || 0) - t.amount);
+            }
+            // total value = cash + all holdings valued at this trade's price
+            const holdingsValue = Object.entries(holdingsMap).reduce((sum, [, qty]) => sum + qty * t.price, 0);
+            points.push({ i: points.length, v: cash + holdingsValue });
         }
-        return points.length > 0 ? points : [{ i: 0, v: INITIAL_BALANCE }];
+        return points.length > 1 ? points : [{ i: 0, v: INITIAL_BALANCE }];
     }, [trades]);
 
     // Pie allocation data
@@ -312,6 +322,7 @@ export default function PortfolioPage() {
                                 </span>
                             )}
                         </div>
+                        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                         <RowHeader />
 
                         {allPositions.length > 0 ? (
@@ -357,6 +368,7 @@ export default function PortfolioPage() {
                                 {totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
                             </span>
                         </div>
+                        </div>{/* end overflow-x wrapper */}
                     </div>
 
                     {/* Trade history */}

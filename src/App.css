@@ -275,7 +275,7 @@
 
 .metrics-container {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -300,6 +300,44 @@
     0% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.4); }
     70% { box-shadow: 0 0 0 8px rgba(255, 69, 58, 0); }
     100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0); }
+}
+
+/* Watchlist item — CSS hover instead of JS DOM mutation */
+.watchlist-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 8px; border-radius: 8px; cursor: pointer;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+    position: relative;
+}
+.watchlist-item:hover { background: rgba(255,255,255,0.07); }
+.watchlist-item--active {
+    background: rgba(10,132,255,0.12) !important;
+    border-color: rgba(10,132,255,0.3) !important;
+}
+.watchlist-remove { opacity: 0; transition: opacity 0.15s; }
+.watchlist-item:hover .watchlist-remove { opacity: 1; }
+
+/* Card utility classes */
+.card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+}
+.card-elevated {
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xl);
+}
+.card-glass {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: var(--radius-lg);
 }
 
 .mobile-menu-btn {

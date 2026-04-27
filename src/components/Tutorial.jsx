@@ -19,7 +19,7 @@ const STEPS = [
     title: 'Trading Terminal',
     subtitle: 'Live prices, real-time AI decisions',
     desc: 'The Terminal streams live Coinbase prices for BTC, ETH, SOL and 12 others via WebSocket. The Neural Engine panel shows what the AI is evaluating right now — its reasoning, confidence score, and the signal inputs it used.',
-    tip: '💡 The Intelligence Strip below the metrics shows Fear & Greed, DeFi TVL trend, and Polymarket probability — the same signals your AI uses.',
+    tip: '💡 Click START ENGINE in the top bar to begin. The Intelligence Strip below the metrics shows Fear & Greed, DeFi TVL trend, and Polymarket probability — the same signals your AI uses.',
   },
   {
     icon: 'Briefcase',
@@ -84,8 +84,17 @@ export default function Tutorial({ onClose }) {
   const isLast = step === STEPS.length - 1;
   const isFirst = step === 0;
 
+  // Close on Escape key or backdrop click
+  React.useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   return (
-    <div style={{
+    <div
+      onClick={onClose}
+      style={{
       position: 'fixed',
       inset: 0,
       background: 'rgba(0, 0, 0, 0.85)',
@@ -98,7 +107,7 @@ export default function Tutorial({ onClose }) {
       padding: '1rem',
       animation: 'fadeIn 0.25s ease',
     }}>
-      <div style={{
+      <div onClick={e => e.stopPropagation()} style={{
         width: '100%',
         maxWidth: '520px',
         background: 'rgba(12, 12, 18, 0.98)',

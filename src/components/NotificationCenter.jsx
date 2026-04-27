@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Bell, CheckCheck, TrendingUp, ShieldOff, Bot, Trophy, Zap } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { authFetch } from '../lib/supabase';
@@ -15,6 +15,7 @@ const TYPE_ICONS = {
 export default function NotificationCenter() {
     const { notifications, unreadCount, markAllRead } = useStore();
     const [open, setOpen] = useState(false);
+    const containerRef = useRef(null);
 
     const handleOpen = () => {
         setOpen(o => !o);
@@ -24,8 +25,18 @@ export default function NotificationCenter() {
         }
     };
 
+    // Close on outside click
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
     return (
-        <div style={{ position: 'relative' }}>
+        <div ref={containerRef} style={{ position: 'relative' }}>
             <button
                 onClick={handleOpen}
                 style={{

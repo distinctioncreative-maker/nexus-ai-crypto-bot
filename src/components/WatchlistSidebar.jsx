@@ -161,19 +161,7 @@ export default function WatchlistSidebar() {
                     <div
                         key={productId}
                         onClick={() => handleSelect(productId)}
-                        style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '6px 8px',
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            background: isActive ? 'rgba(10,132,255,0.12)' : 'rgba(255,255,255,0.03)',
-                            border: isActive ? '1px solid rgba(10,132,255,0.3)' : '1px solid transparent',
-                            transition: 'all 0.15s',
-                            position: 'relative',
-                            group: 'true'
-                        }}
-                        onMouseEnter={e => { if (!isActive) { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.querySelector('.remove-btn').style.opacity = '1'; } }}
-                        onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.querySelector('.remove-btn').style.opacity = '0'; } }}
+                        className={`watchlist-item${isActive ? ' watchlist-item--active' : ''}`}
                     >
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0, flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -208,12 +196,12 @@ export default function WatchlistSidebar() {
 
                         {/* Remove button (only visible on hover, not for active) */}
                         <button
-                            className="remove-btn"
+                            className="remove-btn watchlist-remove"
                             onClick={e => { e.stopPropagation(); handleRemove(productId); }}
                             style={{
-                                opacity: 0, background: 'none', border: 'none',
+                                background: 'none', border: 'none',
                                 cursor: 'pointer', color: 'rgba(255,69,58,0.7)',
-                                padding: '0', lineHeight: 0, transition: 'opacity 0.15s',
+                                padding: '0', lineHeight: 0,
                                 flexShrink: 0
                             }}
                             title="Remove from watchlist"

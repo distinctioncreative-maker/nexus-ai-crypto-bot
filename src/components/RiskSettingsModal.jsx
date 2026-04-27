@@ -85,14 +85,16 @@ export default function RiskSettingsModal() {
                     display: 'flex', alignItems: 'center', justifyContent: 'center'
                 }}>
                     <div style={{
-                        background: '#0e0e12',
+                        background: 'var(--bg-card)',
                         border: '1px solid rgba(255,255,255,0.12)',
                         borderRadius: '16px',
-                        padding: '1.75rem',
                         width: '460px',
                         maxHeight: '90vh',
-                        overflowY: 'auto'
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
                     }}>
+                        <div style={{ padding: '1.75rem 1.75rem 0', overflowY: 'auto', flex: 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                             <h3 style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <Settings size={18} /> Risk Settings
@@ -325,26 +327,30 @@ export default function RiskSettingsModal() {
                             These settings apply to all future trades. Crypto is highly volatile — never risk money you cannot afford to lose.
                         </div>
 
-                        {saveError && (
-                            <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem', background: 'rgba(255,69,58,0.1)', border: '1px solid rgba(255,69,58,0.3)', borderRadius: '6px', fontSize: '0.75rem', color: 'var(--accent-red)' }}>
-                                {saveError}
-                            </div>
-                        )}
+                        </div>{/* end scrollable area */}
 
-                        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-                            <button
-                                onClick={() => setOpen(false)}
-                                style={{ padding: '0.5rem 1.2rem', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'var(--text-secondary)', cursor: 'pointer' }}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleSave}
-                                disabled={saving}
-                                style={{ padding: '0.5rem 1.4rem', background: 'rgba(10, 132, 255, 0.15)', border: '1px solid rgba(10, 132, 255, 0.4)', borderRadius: '8px', color: 'var(--accent-blue)', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 600 }}
-                            >
-                                {saving ? 'Saving…' : 'Save Settings'}
-                            </button>
+                        {/* Pinned footer */}
+                        <div style={{ padding: '1rem 1.75rem', borderTop: '1px solid rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.2)', flexShrink: 0 }}>
+                            {saveError && (
+                                <div style={{ marginBottom: '0.6rem', padding: '0.4rem 0.75rem', background: 'rgba(255,69,58,0.1)', border: '1px solid rgba(255,69,58,0.3)', borderRadius: '6px', fontSize: '0.75rem', color: 'var(--accent-red)' }}>
+                                    {saveError}
+                                </div>
+                            )}
+                            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                                <button
+                                    onClick={() => setOpen(false)}
+                                    style={{ padding: '0.5rem 1.2rem', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSave}
+                                    disabled={saving}
+                                    style={{ padding: '0.5rem 1.4rem', background: 'rgba(10,132,255,0.15)', border: '1px solid rgba(10,132,255,0.4)', borderRadius: '8px', color: 'var(--accent-blue)', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+                                >
+                                    {saving ? 'Saving…' : 'Save Settings'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -89,6 +89,7 @@ wss.on('connection', async (ws, req) => {
             assetHoldings: snapshot.assetHoldings,
             trades: snapshot.trades,
             selectedProduct: snapshot.selectedProduct,
+            watchlist: snapshot.watchlist,
             riskSettings: snapshot.riskSettings,
             tradingMode: snapshot.tradingMode,
             isLiveMode: snapshot.isLiveMode,
@@ -136,8 +137,8 @@ wss.on('connection', async (ws, req) => {
         }
     })();
 
-    // Start per-user market stream + AI
-    const { cleanup, setProduct } = startUserStream(userId, sendData, state.selectedProduct);
+    // Start per-user market stream + AI (multi-product watchlist)
+    const { cleanup, setProduct, setWatchlist } = startUserStream(userId, sendData, state.selectedProduct, userStore.getWatchlist(userId));
 
     // Handle messages from the client
     ws.on('message', async (raw) => {
@@ -151,6 +152,12 @@ wss.on('connection', async (ws, req) => {
                     console.log(`🔀 User ${userId} switched to ${newProduct}`);
                     sendPortfolioState();
                 }
+            }
+
+            if (msg.type === 'SET_WATCHLIST' && Array.isArray(msg.payload?.products)) {
+                setWatchlist(msg.payload.products);
+                sendPortfolioState();
+                console.log(`📋 User ${userId} updated watchlist: ${msg.payload.products.join(', ')}`);
             }
 
             if (msg.type === 'KILL_SWITCH') {
@@ -221,7 +228,7 @@ wss.on('connection', async (ws, req) => {
                         } else if (u.engineStatus === 'PAPER_RUNNING') {
                             // AI Assisted + Paper
                             const executed = userStore.executePaperTrade(
-                                userId, pending.side, finalAmount, pending.price, pending.reasoning
+                                userId, pending.side, finalAmount, pending.price, pending.reasoning, pending.product
                             );
                             if (executed) {
                                 sendData('TRADE_EXEC', executed);

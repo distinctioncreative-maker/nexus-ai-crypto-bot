@@ -264,7 +264,7 @@ async function executeTradeDecision(userId, productId, decision, price, history,
         }
     }
 
-    const suggestedAmount = getSuggestedTradeSize(userId, price, productId);
+    const suggestedAmount = getSuggestedTradeSize(userId, price, productId, history);
     const amountToTrade = decision.position_size_override
         ? Math.min(decision.position_size_override, suggestedAmount * 2)
         : suggestedAmount;

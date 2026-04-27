@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { Bot, ShieldAlert, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Cpu, Radio, KeyRound, Menu, X } from 'lucide-react';
+import { Bot, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Cpu, Radio, KeyRound, Menu, X } from 'lucide-react';
 import { useStore } from './store/useStore';
 import { initWebSocket, closeWebSocket, sendTradingModeChange, sendEngineStatusChange } from './services/websocket';
 import { supabase, authFetch } from './lib/supabase';
@@ -25,6 +25,7 @@ import LiveModeConfirmModal from './components/LiveModeConfirmModal';
 import Tutorial from './components/Tutorial';
 import DebugPanel from './components/DebugPanel';
 import ChangelogPage from './components/ChangelogPage';
+import EngineControl from './components/EngineControl';
 
 function App() {
   const {
@@ -160,58 +161,7 @@ function App() {
           </button>
 
           <div className={`system-controls ${mobileMenuOpen ? 'open' : ''}`}>
-            <div className="mode-toggle-container" title="Halt execution engine — no orders will be placed">
-              <button
-                className={`mode-pill ${engineStatus === 'STOPPED' ? 'stopped' : ''}`}
-                onClick={() => updateEngineStatus('STOPPED')}
-                style={{ border: 'none', cursor: 'pointer' }}
-              >
-                <ShieldAlert size={16}/> STOPPED
-              </button>
-            </div>
-
-            <div className="mode-toggle-container" title="Run paper simulation — virtual trades only">
-              <button
-                className={`mode-pill ${engineStatus === 'PAPER_RUNNING' ? 'paper' : ''}`}
-                onClick={() => updateEngineStatus('PAPER_RUNNING')}
-                style={{ border: 'none', cursor: 'pointer' }}
-              >
-                <Binary size={16}/> PAPER
-              </button>
-            </div>
-
-            {hasCoinbaseKeys ? (
-              <div className="mode-toggle-container" title="Live trading — AI Assisted, real Coinbase orders">
-                <button
-                  className={`mode-pill ${engineStatus === 'LIVE_RUNNING' ? 'live' : ''}`}
-                  onClick={() => setShowLiveConfirm(true)}
-                  style={{ border: 'none', cursor: 'pointer' }}
-                >
-                  <ShieldAlert size={16}/> LIVE
-                </button>
-              </div>
-            ) : (
-              <div className="mode-toggle-container" title="Add Coinbase API keys to enable live trading">
-                <div className="mode-pill" style={{ opacity: 0.35, cursor: 'not-allowed', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <KeyRound size={14}/> LIVE
-                </div>
-              </div>
-            )}
-
-            {/* Trading mode toggle: Full Auto / AI Assisted */}
-            <div
-              className="mode-toggle-container"
-              onClick={() => {
-                const next = tradingMode === 'FULL_AUTO' ? 'AI_ASSISTED' : 'FULL_AUTO';
-                sendTradingModeChange(next);
-              }}
-              title={tradingMode === 'FULL_AUTO' ? 'Full Auto: AI executes without confirmation' : 'AI Assisted: You confirm each trade'}
-            >
-              <div className={`mode-pill ${tradingMode === 'AI_ASSISTED' ? 'live' : 'paper'}`} style={{ fontSize: '0.7rem' }}>
-                <Cpu size={14} />
-                {tradingMode === 'AI_ASSISTED' ? 'AI ASSISTED' : 'FULL AUTO'}
-              </div>
-            </div>
+            <EngineControl onLiveRequest={() => setShowLiveConfirm(true)} />
 
             <KillSwitch />
             <NotificationCenter />

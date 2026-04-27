@@ -59,18 +59,18 @@ export default function Dashboard() {
     const totalPnl = totalPortfolioValue - initialBalance;
     const totalPnlPct = (totalPnl / initialBalance) * 100;
 
-    // Stale data detection — show reconnecting badge if no TICK for > 8s
+    // Stale data detection — only when engine is running (not confuse stopped with disconnected)
     const [isStale, setIsStale] = useState(false);
     useEffect(() => {
         const check = setInterval(() => {
-            if (lastTickTime > 0 && Date.now() - lastTickTime > 8000) {
+            if (engineStatus !== 'STOPPED' && lastTickTime > 0 && Date.now() - lastTickTime > 8000) {
                 setIsStale(true);
             } else {
                 setIsStale(false);
             }
         }, 2000);
         return () => clearInterval(check);
-    }, [lastTickTime]);
+    }, [lastTickTime, engineStatus]);
 
     // Fetch full product catalog on mount
     useEffect(() => {

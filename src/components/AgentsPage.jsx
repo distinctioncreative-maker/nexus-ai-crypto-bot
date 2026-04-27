@@ -326,7 +326,7 @@ function ConsensusBar({ strategies }) {
 }
 
 export default function AgentsPage() {
-  const { strategies } = useStore();
+  const { strategies, trades } = useStore();
 
   const leader = useMemo(() => {
     const active = strategies.filter(s => s.status === 'active');
@@ -377,6 +377,48 @@ export default function AgentsPage() {
 
           {/* Consensus bar */}
           <ConsensusBar strategies={strategies} />
+
+          {/* Recent Executed Trades */}
+          {trades.length > 0 && (
+            <div className="glass-panel" style={{ padding: '0.85rem 1rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
+                Recent Portfolio Activity
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                {trades.slice(0, 8).map(trade => (
+                  <div key={trade.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '0.35rem 0.6rem',
+                    background: trade.type === 'BUY' ? 'rgba(48,209,88,0.06)' : 'rgba(255,69,58,0.06)',
+                    borderRadius: '6px',
+                    border: `1px solid ${trade.type === 'BUY' ? 'rgba(48,209,88,0.15)' : 'rgba(255,69,58,0.15)'}`
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{
+                        fontSize: '0.6rem', fontWeight: 700, fontFamily: 'var(--font-mono)',
+                        color: trade.type === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)',
+                        padding: '0.1rem 0.35rem', borderRadius: '3px',
+                        background: trade.type === 'BUY' ? 'rgba(48,209,88,0.15)' : 'rgba(255,69,58,0.15)'
+                      }}>
+                        {trade.type}
+                      </span>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                        {trade.product || 'BTC-USD'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <span style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                        {Number(trade.amount).toFixed(4)} @ ${trade.price != null ? Number(trade.price).toLocaleString('en-US', { maximumFractionDigits: 2 }) : '—'}
+                      </span>
+                      <span style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.3)' }}>
+                        {trade.time ? new Date(trade.time).toLocaleTimeString() : ''}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Agent cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.85rem' }}>
