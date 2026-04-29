@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["npm --prefix server install --omit=dev"]
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "npm --prefix server start"
