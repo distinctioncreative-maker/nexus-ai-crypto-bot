@@ -50,6 +50,10 @@ const supabase = (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_
 // Start shared public market stream immediately
 ensureMarketConnection();
 
+// Per-user Oracle cooldowns: prevent rapid-fire queries from exhausting Groq rate limit
+const oracleCooldowns = new Map(); // userId -> lastQueryTimestamp
+const ORACLE_COOLDOWN_MS = 15000; // 15 seconds between Oracle queries
+
 // WebSocket: authenticate user, send portfolio state, start per-user stream
 wss.on('connection', async (ws, req) => {
     const requestUrl = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
@@ -188,18 +192,27 @@ wss.on('connection', async (ws, req) => {
             }
 
             if (msg.type === 'SITUATION_ROOM_QUERY' && msg.payload?.message) {
-                const { answerUserQueryMultiAgent } = require('./services/aiEngine');
-                sendData('AI_STATUS', 'Situation Room: 5 agents deliberating…');
-                await answerUserQueryMultiAgent(
-                    userId,
-                    msg.payload.message,
-                    userStore.getSelectedProduct(userId),
-                    (agentId, name, role, color, text) => {
-                        sendData('SITUATION_ROOM_AGENT', { agentId, name, role, color, text });
-                    },
-                    Array.isArray(msg.payload.history) ? msg.payload.history : []
-                );
-                sendData('SITUATION_ROOM_DONE', {});
+                const now = Date.now();
+                const lastQuery = oracleCooldowns.get(userId) || 0;
+                const elapsed = now - lastQuery;
+                if (elapsed < ORACLE_COOLDOWN_MS) {
+                    const waitSecs = Math.ceil((ORACLE_COOLDOWN_MS - elapsed) / 1000);
+                    sendData('SITUATION_ROOM_AGENT', { agentId: 'COMBINED', name: 'Quant Oracle', role: 'Chief Strategist', color: '#FF9F0A', text: `[cooldown: ${waitSecs}]` });
+                    sendData('SITUATION_ROOM_DONE', {});
+                } else {
+                    oracleCooldowns.set(userId, now);
+                    const { answerUserQueryMultiAgent } = require('./services/aiEngine');
+                    await answerUserQueryMultiAgent(
+                        userId,
+                        msg.payload.message,
+                        userStore.getSelectedProduct(userId),
+                        (agentId, name, role, color, text) => {
+                            sendData('SITUATION_ROOM_AGENT', { agentId, name, role, color, text });
+                        },
+                        Array.isArray(msg.payload.history) ? msg.payload.history : []
+                    );
+                    sendData('SITUATION_ROOM_DONE', {});
+                }
             }
 
             if (msg.type === 'SET_ENGINE_STATUS' && msg.payload?.engineStatus) {

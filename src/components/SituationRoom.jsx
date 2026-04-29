@@ -19,7 +19,9 @@ let msgId = 0;
 
 function OracleBubble({ text, thinking, isNew }) {
     const isOffline = !thinking && text?.startsWith('[offline:');
-    const stanceMatch = !isOffline && text?.match(/\b(LONG|FLAT|WATCH|EXIT)\b/);
+    const cooldownMatch = !thinking && text?.match(/^\[cooldown: ?(\d+)\]/);
+    const cooldownSecs = cooldownMatch ? parseInt(cooldownMatch[1], 10) : null;
+    const stanceMatch = !isOffline && !cooldownSecs && text?.match(/\b(LONG|FLAT|WATCH|EXIT)\b/);
     const stance = stanceMatch?.[1];
     const stanceColor = { LONG: '#30D158', FLAT: '#636366', WATCH: '#FF9F0A', EXIT: '#FF453A' }[stance];
     const StanceIcon = { LONG: TrendingUp, FLAT: Minus, WATCH: Brain, EXIT: TrendingDown }[stance] || null;
@@ -29,16 +31,16 @@ function OracleBubble({ text, thinking, isNew }) {
             {/* Oracle avatar */}
             <div style={{
                 width: 34, height: 34, borderRadius: '10px', flexShrink: 0,
-                background: isOffline ? 'rgba(255,159,10,0.1)' : 'rgba(10,132,255,0.12)',
-                border: `1px solid ${isOffline ? 'rgba(255,159,10,0.3)' : 'rgba(10,132,255,0.3)'}`,
+                background: (isOffline || cooldownSecs) ? 'rgba(255,159,10,0.1)' : 'rgba(10,132,255,0.12)',
+                border: `1px solid ${(isOffline || cooldownSecs) ? 'rgba(255,159,10,0.3)' : 'rgba(10,132,255,0.3)'}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-                <Brain size={16} color={isOffline ? '#FF9F0A' : '#0A84FF'} />
+                <Brain size={16} color={(isOffline || cooldownSecs) ? '#FF9F0A' : '#0A84FF'} />
             </div>
 
             <div style={{ flex: 1, maxWidth: '88%' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isOffline ? '#FF9F0A' : '#0A84FF' }}>Quant Oracle</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: (isOffline || cooldownSecs) ? '#FF9F0A' : '#0A84FF' }}>Quant Oracle</span>
                     {stance && StanceIcon && (
                         <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
@@ -54,8 +56,8 @@ function OracleBubble({ text, thinking, isNew }) {
                 <div style={{
                     padding: '0.7rem 0.95rem',
                     borderRadius: '4px 14px 14px 14px',
-                    background: isOffline ? 'rgba(255,159,10,0.06)' : 'rgba(10,132,255,0.06)',
-                    border: `1px solid ${isOffline ? 'rgba(255,159,10,0.2)' : 'rgba(10,132,255,0.15)'}`,
+                    background: (isOffline || cooldownSecs) ? 'rgba(255,159,10,0.06)' : 'rgba(10,132,255,0.06)',
+                    border: `1px solid ${(isOffline || cooldownSecs) ? 'rgba(255,159,10,0.2)' : 'rgba(10,132,255,0.15)'}`,
                     fontSize: '0.875rem', lineHeight: 1.6,
                     color: thinking ? 'var(--text-secondary)' : 'var(--text-primary)',
                     whiteSpace: 'pre-wrap', wordBreak: 'break-word',
@@ -65,9 +67,13 @@ function OracleBubble({ text, thinking, isNew }) {
                             <Loader size={11} style={{ animation: 'spin 0.9s linear infinite', flexShrink: 0 }} />
                             Analyzing market conditions…
                         </span>
+                    ) : cooldownSecs ? (
+                        <span style={{ color: 'rgba(255,159,10,0.85)', fontSize: '0.83rem' }}>
+                            Please wait {cooldownSecs}s before asking again — the Oracle has a short cooldown to stay within API limits.
+                        </span>
                     ) : isOffline ? (
                         <span style={{ color: 'rgba(255,159,10,0.85)', fontSize: '0.83rem' }}>
-                            Oracle is temporarily rate-limited — try again in 30 seconds. This happens when many AI requests run simultaneously.
+                            Oracle is temporarily unavailable — the AI provider is rate-limited. Wait 30 seconds and try again.
                         </span>
                     ) : text}
                 </div>

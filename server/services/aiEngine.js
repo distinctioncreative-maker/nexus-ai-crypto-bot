@@ -5,20 +5,22 @@ const { getAgentConsensus, recordAgentLesson } = require('./strategyEngine');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+// Fast 8b model for autopsies/lessons — separate rate-limit pool from the 70b eval/Oracle model
+const GROQ_FAST_MODEL = 'llama-3.1-8b-instant';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:14b';
 
-// Concurrency limiter: max 2 simultaneous Groq calls to prevent burst 429s
+// Concurrency limiter: max 2 simultaneous Groq calls on the primary model
 let _pendingGroqCalls = 0;
 const _groqQueue = [];
 
-async function aiChatQueued(systemPrompt, userContent, jsonMode = false, maxTokens = 500) {
+async function aiChatQueued(systemPrompt, userContent, jsonMode = false, maxTokens = 500, model) {
     if (_pendingGroqCalls >= 2) {
         await new Promise(r => _groqQueue.push(r));
     }
     _pendingGroqCalls++;
     try {
-        return await aiChat(systemPrompt, userContent, jsonMode, maxTokens);
+        return await aiChat(systemPrompt, userContent, jsonMode, maxTokens, model);
     } finally {
         _pendingGroqCalls--;
         if (_groqQueue.length > 0) _groqQueue.shift()();
@@ -30,10 +32,10 @@ async function aiChatQueued(systemPrompt, userContent, jsonMode = false, maxToke
  * Returns the response text, or throws on error.
  * Retries up to 3 times on 429 (rate limit) with exponential backoff.
  */
-async function aiChat(systemPrompt, userContent, jsonMode = false, maxTokens = 500) {
+async function aiChat(systemPrompt, userContent, jsonMode = false, maxTokens = 500, model) {
     if (GROQ_API_KEY) {
         const body = {
-            model: GROQ_MODEL,
+            model: model || GROQ_MODEL,
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userContent }
@@ -267,7 +269,7 @@ This trade was a ${isWin ? 'WIN' : 'LOSS'}.
 What specific rule should this agent apply to improve future trades? One precise sentence.`;
 
     try {
-        const raw = await aiChatQueued(systemPrompt, prompt, true, 150);
+        const raw = await aiChatQueued(systemPrompt, prompt, true, 150, GROQ_FAST_MODEL);
         const data = JSON.parse(raw);
         return data.lesson || `Trade closed with ${pnlPct.toFixed(2)}% PnL.`;
     } catch (err) {
@@ -306,7 +308,8 @@ Your signal was: ${vote?.signal || 'HOLD'} (${wasCorrect === true ? 'CORRECT' : 
 Write one rule to improve YOUR specific ${approach} strategy going forward.`;
 
         try {
-            const raw = await aiChatQueued(systemPrompt, prompt, true, 100);
+            // Use fast 8b model for autopsies — separate rate-limit pool from eval/Oracle
+            const raw = await aiChatQueued(systemPrompt, prompt, true, 100, GROQ_FAST_MODEL);
             const data = JSON.parse(raw);
             if (data.lesson) recordAgentLesson(userId, agentId, data.lesson);
         } catch {}
