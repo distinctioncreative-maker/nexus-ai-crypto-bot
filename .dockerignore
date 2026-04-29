@@ -1,0 +1,15 @@
+node_modules
+server/node_modules
+dist
+.git
+*.md
+src
+public
+index.html
+vite.config.js
+eslint.config.js
+package-lock.json
+package.json
+test-e2e.cjs
+supabase
+PDF with trading algos.pdf
