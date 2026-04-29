@@ -492,8 +492,9 @@ function startUserStream(userId, broadcastFn, initialProduct, initialWatchlist) 
         }
 
         // ── Multi-product AI evaluation loop ────────────────────────────────
-        // Evaluate all watchlist products whose timer has expired (15s per product)
-        const EVAL_INTERVAL_MS = 15000;
+        // Evaluate ONE product per tick to avoid Groq token burst (was parallel = all 5 at once).
+        // Each coin gets its own 30s timer so they stagger naturally over time.
+        const EVAL_INTERVAL_MS = 30000;
         const productsToEval = watchlist.filter(p => {
             const pData = getProductData(p);
             if (pData.candles.length < 5) return false;
@@ -502,7 +503,6 @@ function startUserStream(userId, broadcastFn, initialProduct, initialWatchlist) 
         });
 
         if (productsToEval.length === 0) {
-            // Show warmup if the chart product is still loading
             const selData = getProductData(selectedProduct);
             if (selData.candles.length < 5) {
                 broadcastFn('AI_STATUS', `Warming up — collecting candles (${selData.candles.length}/5)…`);
@@ -510,19 +510,21 @@ function startUserStream(userId, broadcastFn, initialProduct, initialWatchlist) 
             return;
         }
 
-        // Mark eval times immediately to prevent re-entry during async eval
-        for (const p of productsToEval) evalTimers.set(p, now);
+        // Evaluate ONE product per tick (sequential, not parallel).
+        // Remaining products will be picked up on the next 2s tick.
+        const productId = productsToEval[0];
+        evalTimers.set(productId, now);
 
-        broadcastFn('AI_STATUS', `Analyzing ${productsToEval.join(', ')}…`);
+        broadcastFn('AI_STATUS', `Analyzing ${productId.split('-')[0]} market structure…`);
 
-        // Run all product evals in parallel
-        const evalResults = await Promise.allSettled(
-            productsToEval.map(async (productId) => {
-                const pData = getProductData(productId);
-                const decision = await evaluateMarketSignal(userId, [...pData.candles], productId);
-                return { productId, decision, price: pData.price, history: pData.history };
-            })
-        );
+        const evalResults = [];
+        try {
+            const pData = getProductData(productId);
+            const decision = await evaluateMarketSignal(userId, [...pData.candles], productId);
+            evalResults.push({ status: 'fulfilled', value: { productId, decision, price: pData.price, history: pData.history } });
+        } catch (err) {
+            evalResults.push({ status: 'rejected', reason: err, value: { productId } });
+        }
 
         let statusParts = [];
         for (const result of evalResults) {

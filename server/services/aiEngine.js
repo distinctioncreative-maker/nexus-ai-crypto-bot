@@ -26,7 +26,7 @@ async function aiChat(systemPrompt, userContent, jsonMode = false, maxTokens = 5
         };
         if (jsonMode) body.response_format = { type: 'json_object' };
 
-        const maxRetries = 3;
+        const maxRetries = 4;
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
                 const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', body, {
@@ -37,10 +37,20 @@ async function aiChat(systemPrompt, userContent, jsonMode = false, maxTokens = 5
             } catch (err) {
                 const status = err.response?.status;
                 if (status === 429 && attempt < maxRetries - 1) {
-                    // Groq rate limit — honour Retry-After header if present, else backoff
-                    const retryAfter = parseInt(err.response?.headers?.['retry-after'] || '0', 10);
-                    const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.pow(2, attempt + 1) * 1000;
-                    console.warn(`Groq 429 rate limit — retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+                    // Groq rate limit — check token reset header first, then request retry-after, then exponential backoff
+                    const headers = err.response?.headers || {};
+                    const tokenReset = headers['x-ratelimit-reset-tokens']; // e.g. "58.421s"
+                    const requestRetry = parseInt(headers['retry-after'] || '0', 10);
+                    let waitMs;
+                    if (tokenReset && tokenReset.endsWith('s')) {
+                        waitMs = Math.ceil(parseFloat(tokenReset) * 1000) + 500; // wait for token window to reset
+                    } else if (requestRetry > 0) {
+                        waitMs = requestRetry * 1000 + 200;
+                    } else {
+                        // Exponential: 3s, 8s, 20s — enough for a 6000 token/min window to clear
+                        waitMs = [3000, 8000, 20000][attempt] || 20000;
+                    }
+                    console.warn(`Groq 429 — waiting ${(waitMs/1000).toFixed(1)}s (attempt ${attempt + 1}/${maxRetries})`);
                     await new Promise(r => setTimeout(r, waitMs));
                     continue;
                 }
@@ -113,8 +123,32 @@ async function evaluateMarketSignal(userId, candles, productId) {
 
     // ── Agent Consensus (algorithmic, zero API cost) ──────────────────────────
     const { votes, orion: consensusResult } = getAgentConsensus(userId, candles, signals);
-    // Also tick shadow portfolios (non-blocking)
     try { tickShadowPortfolios(userId, candles, signals); } catch {}
+
+    // ── Strong Consensus Bypass ────────────────────────────────────────────────
+    // When 4+ of 5 specialist agents agree, skip the Groq synthesis call entirely.
+    // The LLM would just ratify the consensus anyway — skipping saves ~400 tokens
+    // and prevents Groq 429 rate limit exhaustion on the background eval loop.
+    const subVotes = votes.filter(v => v.agentId !== 'COMBINED');
+    const dominantCount = Math.max(consensusResult.buyCount, consensusResult.sellCount, consensusResult.holdCount);
+    const isStrongConsensus = dominantCount >= Math.ceil(subVotes.length * 0.8); // ≥80% agreement
+
+    if (isStrongConsensus && consensusResult.strength > 40) {
+        const decision = {
+            action: consensusResult.signal,
+            reasoning: `${consensusResult.consensus} consensus (${dominantCount}/${subVotes.length} agents). ${consensusResult.reason}`,
+            confidence: Math.round(consensusResult.strength),
+            take_profit_pct: null,
+            stop_loss_pct: null,
+            position_size_override: null,
+            lesson_learned: '',
+            agentVotes: votes,
+            agentConsensus: consensusResult,
+        };
+        const finalAction = ['BUY', 'SELL', 'HOLD'].includes(decision.action) ? decision.action : 'HOLD';
+        decision.action = finalAction;
+        return decision;
+    }
 
     const voteDebate = votes.filter(v => v.agentId !== 'COMBINED').map(v =>
         `${v.name}(${v.agentId.split('_')[0]}): ${v.signal} — ${v.reason}`
@@ -181,7 +215,7 @@ The 4 specialist agents have voted algorithmically above. As Chief Strategist, r
 Respond with JSON only.`;
 
     try {
-        const raw = await aiChat(systemInstruction, prompt, true, 800);
+        const raw = await aiChat(systemInstruction, prompt, true, 400);
         const decision = JSON.parse(raw);
         const finalAction = ['BUY', 'SELL', 'HOLD'].includes(decision.action) ? decision.action : 'HOLD';
         decision.action = finalAction;
