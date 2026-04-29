@@ -8,6 +8,23 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:14b';
 
+// Concurrency limiter: max 2 simultaneous Groq calls to prevent burst 429s
+let _pendingGroqCalls = 0;
+const _groqQueue = [];
+
+async function aiChatQueued(systemPrompt, userContent, jsonMode = false, maxTokens = 500) {
+    if (_pendingGroqCalls >= 2) {
+        await new Promise(r => _groqQueue.push(r));
+    }
+    _pendingGroqCalls++;
+    try {
+        return await aiChat(systemPrompt, userContent, jsonMode, maxTokens);
+    } finally {
+        _pendingGroqCalls--;
+        if (_groqQueue.length > 0) _groqQueue.shift()();
+    }
+}
+
 /**
  * Call AI: uses Groq if GROQ_API_KEY is set, otherwise falls back to local Ollama.
  * Returns the response text, or throws on error.
@@ -216,22 +233,15 @@ The 4 specialist agents have voted algorithmically above. As Chief Strategist, r
 Respond with JSON only.`;
 
     try {
-        const raw = await aiChat(systemInstruction, prompt, true, 400);
+        const raw = await aiChatQueued(systemInstruction, prompt, true, 400);
         const decision = JSON.parse(raw);
         const finalAction = ['BUY', 'SELL', 'HOLD'].includes(decision.action) ? decision.action : 'HOLD';
         decision.action = finalAction;
 
-        // Attach agent votes to decision for downstream use (autopsy, broadcast)
+        // Attach agent votes to decision for downstream use (broadcast)
         decision.agentVotes = votes;
 
-        if (decision.action === 'SELL' && state.trades.length > 0) {
-            const lastBuyTrade = state.trades.find(t => t.type === 'BUY');
-            if (lastBuyTrade) {
-                const pnlPct = ((currentPrice - lastBuyTrade.price) / lastBuyTrade.price) * 100;
-                // Fire-and-forget: run per-agent autopsies + global memory in background
-                runAgentAutopsies(userId, product, lastBuyTrade.price, currentPrice, pnlPct, votes).catch(() => {});
-            }
-        } else if (decision.lesson_learned && decision.action !== 'HOLD') {
+        if (decision.lesson_learned && decision.action !== 'HOLD') {
             userStore.recordLearning(userId, decision.lesson_learned);
         }
 
@@ -257,7 +267,7 @@ This trade was a ${isWin ? 'WIN' : 'LOSS'}.
 What specific rule should this agent apply to improve future trades? One precise sentence.`;
 
     try {
-        const raw = await aiChat(systemPrompt, prompt, true, 150);
+        const raw = await aiChatQueued(systemPrompt, prompt, true, 150);
         const data = JSON.parse(raw);
         return data.lesson || `Trade closed with ${pnlPct.toFixed(2)}% PnL.`;
     } catch (err) {
@@ -267,8 +277,9 @@ What specific rule should this agent apply to improve future trades? One precise
 }
 
 /**
- * Run autopsy for all agents simultaneously after a closed trade.
+ * Run autopsy for all agents sequentially after a closed trade.
  * Each agent gets a lesson personalized to its strategy type.
+ * Sequential (not parallel) to stay under Groq's 30 req/min limit.
  * Fire-and-forget — caller should not await.
  */
 async function runAgentAutopsies(userId, product, entryPrice, exitPrice, pnlPct, agentVotes) {
@@ -283,7 +294,7 @@ async function runAgentAutopsies(userId, product, entryPrice, exitPrice, pnlPct,
         SENTIMENT_DRIVEN: 'sentiment (Fear & Greed, macro composite)',
     };
 
-    const jobs = Object.entries(AGENT_TYPES).map(async ([agentId, approach]) => {
+    for (const [agentId, approach] of Object.entries(AGENT_TYPES)) {
         const vote = agentVotes?.find(v => v.agentId === agentId);
         const wasCorrect = vote ? (
             (vote.signal === 'BUY' && isWin) || (vote.signal === 'SELL' && !isWin)
@@ -295,18 +306,18 @@ Your signal was: ${vote?.signal || 'HOLD'} (${wasCorrect === true ? 'CORRECT' : 
 Write one rule to improve YOUR specific ${approach} strategy going forward.`;
 
         try {
-            const raw = await aiChat(systemPrompt, prompt, true, 100);
+            const raw = await aiChatQueued(systemPrompt, prompt, true, 100);
             const data = JSON.parse(raw);
             if (data.lesson) recordAgentLesson(userId, agentId, data.lesson);
         } catch {}
-    });
+        await new Promise(r => setTimeout(r, 400));
+    }
 
-    // Run all agent autopsies in parallel + global memory
+    // Global portfolio memory — runs after all agent lessons
     const globalLesson = await performAutopsy(userId, product, entryPrice, exitPrice, pnlPct);
     if (globalLesson) userStore.recordLearning(userId, globalLesson);
 
-    await Promise.allSettled(jobs);
-    console.log(`🧠 Autopsies complete for ${product} trade (${pnlStr}%)`);
+    console.log(`Autopsies complete for ${product} trade (${pnlStr}%)`);
 }
 
 const AGENT_PERSONAS = [
@@ -415,7 +426,7 @@ ${userMessage}`;
     const ORACLE_COLOR = '#0A84FF';
 
     try {
-        const text = await aiChat(systemPrompt, userPrompt, false, 500);
+        const text = await aiChatQueued(systemPrompt, userPrompt, false, 500);
         onAgentResponse(ORACLE_ID, ORACLE_NAME, 'Chief Strategist', ORACLE_COLOR, text);
     } catch (err) {
         onAgentResponse(ORACLE_ID, ORACLE_NAME, 'Chief Strategist', ORACLE_COLOR, `[offline: ${err.message}]`);

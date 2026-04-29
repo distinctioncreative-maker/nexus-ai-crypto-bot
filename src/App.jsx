@@ -195,25 +195,25 @@ function App() {
         <div className="app-layout" onClick={() => setMobileMenuOpen(false)}>
           <nav className="app-navigation">
             <NavLink to="/" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} end>
-              <LayoutDashboard size={22}/> <span className="nav-label">Terminal</span>
+              <LayoutDashboard size={22}/> <span className="nav-label">Trading</span>
             </NavLink>
             <NavLink to="/portfolio" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
               <Briefcase size={22}/> <span className="nav-label">Portfolio</span>
             </NavLink>
             <NavLink to="/intelligence" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
-              <BrainCircuit size={22}/> <span className="nav-label">Intelligence</span>
+              <BrainCircuit size={22}/> <span className="nav-label">Market Intel</span>
             </NavLink>
             <NavLink to="/agents" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
-              <Activity size={22}/> <span className="nav-label">Agents</span>
+              <Activity size={22}/> <span className="nav-label">Strategies</span>
             </NavLink>
             <NavLink to="/backtest" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
               <Binary size={22}/> <span className="nav-label">Backtest</span>
             </NavLink>
             <NavLink to="/situation-room" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
-              <Radio size={22}/> <span className="nav-label">Situation Room</span>
+              <Radio size={22}/> <span className="nav-label">Ask AI</span>
             </NavLink>
             <NavLink to="/changelog" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
-              <BookOpen size={22}/> <span className="nav-label">Docs</span>
+              <BookOpen size={22}/> <span className="nav-label">Guide</span>
             </NavLink>
           </nav>
 

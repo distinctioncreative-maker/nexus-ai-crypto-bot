@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown, Search } from 'lucide-react';
+import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown, Search, Play } from 'lucide-react';
 import { createChart, ColorType, CandlestickSeries } from 'lightweight-charts';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
@@ -429,6 +429,29 @@ export default function Dashboard() {
             <motion.div variants={itemVariants}>
                 <ActivePositionsBar />
             </motion.div>
+
+            {/* Empty state — shown when engine stopped and no trades yet */}
+            {engineStatus === 'STOPPED' && trades.length === 0 && (
+                <motion.div variants={itemVariants} style={{
+                    display: 'flex', alignItems: 'center', gap: '1rem',
+                    background: 'rgba(10,132,255,0.05)', border: '1px solid rgba(10,132,255,0.15)',
+                    borderRadius: '14px', padding: '1rem 1.4rem', marginBottom: '1rem',
+                }}>
+                    <div style={{
+                        width: 40, height: 40, borderRadius: '12px', flexShrink: 0,
+                        background: 'rgba(10,132,255,0.12)', border: '1px solid rgba(10,132,255,0.25)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                        <Play size={18} color="var(--accent-blue)" />
+                    </div>
+                    <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.2rem' }}>Ready to start paper trading</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                            Click <strong style={{ color: 'var(--text-primary)' }}>START ENGINE</strong> in the toolbar above to begin. The AI will analyze the market and place paper trades automatically.
+                        </div>
+                    </div>
+                </motion.div>
+            )}
 
             {/* Chart + Trade Feed Grid (with Watchlist Sidebar) */}
             <motion.div variants={itemVariants} style={{ display: 'flex', alignItems: 'flex-start' }}>
