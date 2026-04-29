@@ -412,7 +412,7 @@ function tickShadowPortfolios(userId, candles, signals) {
         { id: 'VOLUME_MACD',     fn: () => computeVolumeSignal(candles, strategies.find(s => s.id === 'VOLUME_MACD')?.parameters || {}) },
     ];
 
-    const MIN_STRENGTH = 40; // only shadow-trade when signal is confident
+    const MIN_STRENGTH = 20; // lowered: 40 was unreachable; 20 allows real learning
 
     for (const { id, fn } of signalers) {
         const strategy = strategies.find(s => s.id === id);
@@ -439,19 +439,20 @@ function tickShadowPortfolios(userId, candles, signals) {
             sp.closedTrades = sp.closedTrades || [];
             sp.closedTrades.push({ entryPrice: sp.entryPrice, exitPrice: currentPrice, pnl, pnlPct, time: new Date().toISOString() });
             if (sp.closedTrades.length > 50) sp.closedTrades.shift();
-            // Update win/loss
             if (pnl > 0) strategy.wins++; else strategy.losses++;
-            // Update Sharpe (simplified: avg pnlPct / std of pnlPcts)
             updateAgentSharpe(strategy);
             sp.holdings = 0;
             sp.entryPrice = null;
+            // Persist immediately so wins/losses/sharpe survive server restarts
+            getPersistence().saveStrategies(getSupabase(), userId, user.strategies)
+                .catch(err => console.warn('saveStrategies (shadow trade):', err.message));
         }
     }
 
     // Run tournament if enough closed trades accumulated
     const totalClosed = strategies.reduce((sum, s) => sum + (s.shadowPortfolio?.closedTrades?.length || 0), 0);
     const lastCycle = user.strategyTournament?.lastCycleClosedTrades || 0;
-    if (totalClosed - lastCycle >= 20) {
+    if (totalClosed - lastCycle >= 8) {
         runTournamentCycle(userId);
     }
 }

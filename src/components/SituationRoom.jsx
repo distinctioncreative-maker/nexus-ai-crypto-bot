@@ -1,88 +1,69 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Loader, User, RefreshCw } from 'lucide-react';
+import { Send, Loader, User, RefreshCw, Brain, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { sendSituationRoomQuery } from '../services/websocket';
 
-const AGENTS = [
-    { id: 'MOMENTUM',        name: 'Atlas', emoji: '⚡', color: '#F7931A', role: 'Momentum Analyst' },
-    { id: 'MEAN_REVERSION',  name: 'Vera',  emoji: '📊', color: '#627EEA', role: 'Mean Reversion Quant' },
-    { id: 'TREND_FOLLOWING', name: 'Rex',   emoji: '🌊', color: '#9945FF', role: 'Trend Following Strategist' },
-    { id: 'SENTIMENT_DRIVEN',name: 'Luna',  emoji: '🌐', color: '#34C759', role: 'Sentiment & Macro Intelligence' },
-    { id: 'COMBINED',        name: 'Orion', emoji: '🔮', color: '#0A84FF', role: 'Chief Strategist' },
-];
-
-const AGENT_BY_ID = Object.fromEntries(AGENTS.map(a => [a.id, a]));
+const ORACLE = { id: 'COMBINED', name: 'Quant Oracle', color: '#0A84FF' };
 
 const STARTER_PROMPTS = [
-    "What's the current market structure telling you?",
-    "Should we be positioned long or flat right now?",
-    "Atlas and Rex, do you agree on momentum?",
-    "Luna, what is macro sentiment signaling?",
-    "Vera, are we at an extreme that warrants fading?",
-    "Orion, give me your final trade thesis.",
+    "What's the market telling you right now?",
+    "Should I be positioned long or flat?",
+    "Analyze the current Fear & Greed reading",
+    "Which coin has the best setup right now?",
+    "What are the agents learning from recent trades?",
+    "Is this a good entry or should I wait?",
 ];
 
-let msgIdCounter = 0;
+const STORAGE_KEY = 'quant_oracle_chat';
+let msgId = 0;
 
-// ── Message bubble components ─────────────────────────────────────────────────
-
-function AgentBubble({ agent, text, thinking, isNew }) {
-    const stanceMatch = text?.match(/\b(LONG|FLAT|WATCH)\b/);
-    const stance = stanceMatch?.[1]?.toUpperCase();
-    const cleanText = text || '';
-    const stanceColors = { LONG: '#30d158', FLAT: '#636366', WATCH: '#ff9f0a' };
+function OracleBubble({ text, thinking, isNew }) {
+    const stanceMatch = text?.match(/\b(LONG|FLAT|WATCH|EXIT)\b/);
+    const stance = stanceMatch?.[1];
+    const stanceColor = { LONG: '#30D158', FLAT: '#636366', WATCH: '#FF9F0A', EXIT: '#FF453A' }[stance];
+    const StanceIcon = { LONG: TrendingUp, FLAT: Minus, WATCH: Brain, EXIT: TrendingDown }[stance] || null;
 
     return (
-        <div style={{
-            display: 'flex', gap: '0.6rem', alignItems: 'flex-start', marginBottom: '0.7rem',
-            animation: isNew ? 'fadeSlideIn 0.25s ease' : 'none',
-        }}>
+        <div style={{ display: 'flex', gap: '0.7rem', alignItems: 'flex-start', marginBottom: '1rem', animation: isNew ? 'fadeSlideIn 0.2s ease' : 'none' }}>
+            {/* Oracle avatar */}
             <div style={{
-                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                background: `${agent.color}22`, border: `1.5px solid ${agent.color}55`,
+                width: 34, height: 34, borderRadius: '10px', flexShrink: 0,
+                background: 'rgba(10,132,255,0.12)', border: '1px solid rgba(10,132,255,0.3)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '0.9rem', position: 'relative',
             }}>
-                {agent.emoji}
-                {thinking && (
-                    <div style={{
-                        position: 'absolute', bottom: -2, right: -2,
-                        width: 8, height: 8, borderRadius: '50%',
-                        background: agent.color, opacity: 0.9,
-                        animation: 'pulse 1s ease-in-out infinite',
-                    }} />
-                )}
+                <Brain size={16} color="#0A84FF" />
             </div>
-            <div style={{ flex: 1, maxWidth: '85%' }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: agent.color }}>{agent.name}</span>
-                    <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)' }}>{agent.role}</span>
-                    {stance && (
+
+            <div style={{ flex: 1, maxWidth: '88%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0A84FF' }}>Quant Oracle</span>
+                    {stance && StanceIcon && (
                         <span style={{
-                            fontSize: '0.58rem', fontWeight: 800, padding: '0.1rem 0.45rem',
-                            borderRadius: '20px', background: `${stanceColors[stance]}22`,
-                            color: stanceColors[stance], border: `1px solid ${stanceColors[stance]}44`,
+                            display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+                            fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.45rem',
+                            borderRadius: '20px', background: `${stanceColor}22`,
+                            color: stanceColor, border: `1px solid ${stanceColor}44`,
                             letterSpacing: '0.06em',
                         }}>
-                            {stance}
+                            <StanceIcon size={9} /> {stance}
                         </span>
                     )}
                 </div>
                 <div style={{
-                    padding: '0.55rem 0.8rem', borderRadius: '4px 12px 12px 12px',
-                    background: `${agent.color}0c`, border: `1px solid ${agent.color}1a`,
-                    color: 'var(--text-primary)', fontSize: '0.855rem', lineHeight: 1.55,
+                    padding: '0.7rem 0.95rem',
+                    borderRadius: '4px 14px 14px 14px',
+                    background: 'rgba(10,132,255,0.06)',
+                    border: '1px solid rgba(10,132,255,0.15)',
+                    fontSize: '0.875rem', lineHeight: 1.6,
+                    color: thinking ? 'var(--text-secondary)' : 'var(--text-primary)',
                     whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                 }}>
-                    {thinking
-                        ? (
-                            <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}>
-                                <Loader size={10} style={{ animation: 'spin 0.9s linear infinite', flexShrink: 0 }} />
-                                {agent.name} is thinking…
-                            </span>
-                        )
-                        : cleanText
-                    }
+                    {thinking ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontStyle: 'italic', fontSize: '0.82rem' }}>
+                            <Loader size={11} style={{ animation: 'spin 0.9s linear infinite', flexShrink: 0 }} />
+                            Analyzing market conditions…
+                        </span>
+                    ) : text}
                 </div>
             </div>
         </div>
@@ -91,215 +72,183 @@ function AgentBubble({ agent, text, thinking, isNew }) {
 
 function UserBubble({ text, isNew }) {
     return (
-        <div style={{
-            display: 'flex', gap: '0.5rem', alignItems: 'flex-start', justifyContent: 'flex-end',
-            marginBottom: '0.85rem',
-            animation: isNew ? 'fadeSlideIn 0.2s ease' : 'none',
-        }}>
+        <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'flex-end', marginBottom: '0.9rem', animation: isNew ? 'fadeSlideIn 0.2s ease' : 'none' }}>
             <div style={{
-                maxWidth: '70%', padding: '0.55rem 0.85rem',
-                borderRadius: '12px 4px 12px 12px',
-                background: 'rgba(10,132,255,0.14)', border: '1px solid rgba(10,132,255,0.28)',
-                color: 'var(--text-primary)', fontSize: '0.855rem', lineHeight: 1.55,
-                wordBreak: 'break-word',
+                maxWidth: '72%', padding: '0.6rem 0.9rem',
+                borderRadius: '14px 4px 14px 14px',
+                background: 'rgba(10,132,255,0.12)', border: '1px solid rgba(10,132,255,0.25)',
+                fontSize: '0.875rem', lineHeight: 1.55, wordBreak: 'break-word',
+                color: 'var(--text-primary)',
             }}>
                 {text}
             </div>
             <div style={{
-                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                background: 'rgba(10,132,255,0.12)', border: '1px solid rgba(10,132,255,0.25)',
+                width: 34, height: 34, borderRadius: '10px', flexShrink: 0,
+                background: 'rgba(10,132,255,0.08)', border: '1px solid rgba(10,132,255,0.2)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-                <User size={14} color="rgba(10,132,255,0.8)" />
+                <User size={14} color="rgba(10,132,255,0.7)" />
             </div>
         </div>
     );
 }
 
-function SessionDivider({ label }) {
-    return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '1rem 0', opacity: 0.35 }}>
-            <div style={{ flex: 1, height: 1, background: 'var(--border-primary)' }} />
-            <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>{label}</span>
-            <div style={{ flex: 1, height: 1, background: 'var(--border-primary)' }} />
-        </div>
-    );
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
-
 export default function SituationRoom() {
-    const { selectedProduct, currentPrice, wsConnected, strategies } = useStore();
-    const [messages, setMessages] = useState([]);
+    const { selectedProduct, wsConnected, strategies } = useStore();
+
+    // Restore chat from localStorage on mount
+    const [messages, setMessages] = useState(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) return JSON.parse(saved);
+        } catch {}
+        return [{
+            id: ++msgId, type: 'oracle', text:
+                `Quant Oracle online. I'm watching ${selectedProduct || 'BTC-USD'} and all your agent signals continuously. Ask me anything about the market, your positions, or what the agents are learning.`,
+            isNew: false,
+        }];
+    });
+
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
-    const [activeAgents, setActiveAgents] = useState(new Set()); // agents currently "typing"
     const bottomRef = useRef(null);
     const inputRef = useRef(null);
-    const historyRef = useRef([]); // persistent conversation history for AI context
 
-    // Initial welcome message
+    // Persist messages to localStorage
     useEffect(() => {
-        const welcomeId = ++msgIdCounter;
-        setMessages([{
-            id: welcomeId, type: 'agent', agentId: 'COMBINED',
-            text: `War room active. Monitoring ${selectedProduct || 'BTC-USD'} — 5 agents online. This is a persistent session: I'll remember everything you discuss. Ask me anything, or address an agent directly.`,
-            thinking: false, isNew: false,
-        }]);
-    }, []);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-40))); } catch {}
+    }, [messages]);
 
-    // Auto-scroll
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
     const buildHistory = useCallback(() => {
-        // Convert messages to history format for AI context
         return messages
-            .filter(m => m.type === 'user' || (m.type === 'agent' && m.text && !m.thinking))
-            .map(m => ({
-                role: m.type === 'user' ? 'user' : 'agent',
-                agentName: m.type === 'agent' ? (AGENT_BY_ID[m.agentId]?.name || 'Agent') : undefined,
-                content: m.text?.slice(0, 200) || '', // truncate to keep context lean
-            }))
-            .slice(-12); // last 12 turns
+            .filter(m => (m.type === 'user' || m.type === 'oracle') && m.text && !m.thinking)
+            .map(m => ({ role: m.type === 'user' ? 'user' : 'agent', content: m.text?.slice(0, 300) || '' }))
+            .slice(-10);
     }, [messages]);
 
     const send = useCallback(async (textOverride) => {
         const message = (textOverride || input).trim();
-        if (!message || loading) return;
+        if (!message || loading || !wsConnected) return;
         setInput('');
         setLoading(true);
 
         const history = buildHistory();
+        const userMsgId = ++msgId;
+        const oracleMsgId = ++msgId;
 
-        // Add user bubble
-        const userMsgId = ++msgIdCounter;
         setMessages(prev => [
             ...prev,
             { id: userMsgId, type: 'user', text: message, isNew: true },
+            { id: oracleMsgId, type: 'oracle', text: '', thinking: true, isNew: true },
         ]);
 
-        // Add all 5 agents in "thinking" state, one by one
-        const agentMsgIds = {};
-        AGENTS.forEach(a => { agentMsgIds[a.id] = ++msgIdCounter; });
-
-        setMessages(prev => [
-            ...prev,
-            { id: ++msgIdCounter, type: 'divider', label: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
-            ...AGENTS.map(a => ({ id: agentMsgIds[a.id], type: 'agent', agentId: a.id, text: '', thinking: true, isNew: true })),
-        ]);
-
-        setActiveAgents(new Set(AGENTS.map(a => a.id)));
-
-        // Send via WS with history
         sendSituationRoomQuery(
             message,
             history,
-            (agentId, _name, _role, _color, text) => {
+            (_agentId, _name, _role, _color, text) => {
                 setMessages(prev => prev.map(m =>
-                    m.id === agentMsgIds[agentId]
-                        ? { ...m, text, thinking: false, isNew: true }
-                        : m
+                    m.id === oracleMsgId ? { ...m, text, thinking: false } : m
                 ));
-                setActiveAgents(prev => { const next = new Set(prev); next.delete(agentId); return next; });
-                // Append to history ref
-                historyRef.current.push({ role: 'agent', agentName: AGENT_BY_ID[agentId]?.name, content: text });
             },
             () => {
                 setLoading(false);
-                setActiveAgents(new Set());
                 inputRef.current?.focus();
-                // Append user message to history ref
-                historyRef.current.push({ role: 'user', content: message });
             }
         );
-    }, [input, loading, buildHistory]);
-
-    const handleKey = (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-    };
+    }, [input, loading, wsConnected, buildHistory]);
 
     const clearChat = () => {
-        historyRef.current = [];
-        const welcomeId = ++msgIdCounter;
+        localStorage.removeItem(STORAGE_KEY);
         setMessages([{
-            id: welcomeId, type: 'agent', agentId: 'COMBINED',
-            text: `Chat cleared. New session started. Still monitoring ${selectedProduct || 'BTC-USD'}.`,
-            thinking: false, isNew: true,
+            id: ++msgId, type: 'oracle',
+            text: `New session. Monitoring ${selectedProduct || 'BTC-USD'}. What do you want to know?`,
+            isNew: true,
         }]);
     };
 
-    // Get top-performing agent for display
-    const topAgent = strategies.length > 0
-        ? [...strategies].sort((a, b) => (b.sharpe || 0) - (a.sharpe || 0))[0]
-        : null;
+    // Agent signal summary for header
+    const agentSummary = strategies
+        .filter(s => s.id !== 'COMBINED' && s.lastSignal)
+        .map(s => ({ name: s.name.slice(0, 4), signal: s.lastSignal, sharpe: s.sharpe || 0 }));
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: 'calc(100vh - 120px)', background: 'var(--bg-card)', borderRadius: '16px', border: '1px solid var(--border-primary)', overflow: 'hidden' }}>
+        <div style={{
+            display: 'flex', flexDirection: 'column',
+            height: '100%', maxHeight: 'calc(100vh - 120px)',
+            background: 'var(--bg-card)',
+            borderRadius: '16px', border: '1px solid var(--card-border)',
+            overflow: 'hidden',
+        }}>
             <style>{`
-                @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-                @keyframes pulse { 0%,100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.4); opacity: 0.5; } }
+                @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+                @keyframes spin { to { transform: rotate(360deg); } }
             `}</style>
 
             {/* Header */}
-            <div style={{ padding: '0.75rem 1.1rem', borderBottom: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: wsConnected ? '#30d158' : '#ff9f0a', boxShadow: `0 0 6px ${wsConnected ? '#30d158' : '#ff9f0a'}` }} />
-                <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>Situation Room</span>
-                {topAgent && topAgent.sharpe > 0.1 && (
-                    <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', marginLeft: '0.2rem' }}>
-                        · Leading: <span style={{ color: AGENT_BY_ID[topAgent.id]?.color || 'var(--text-primary)' }}>{topAgent.name}</span> (Sharpe {topAgent.sharpe.toFixed(2)})
-                    </span>
+            <div style={{
+                padding: '0.8rem 1.1rem', flexShrink: 0,
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                display: 'flex', alignItems: 'center', gap: '0.6rem',
+            }}>
+                <div style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: wsConnected ? '#30D158' : '#FF9F0A',
+                    boxShadow: `0 0 6px ${wsConnected ? '#30D158' : '#FF9F0A'}`,
+                }} />
+                <Brain size={15} color="#0A84FF" />
+                <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Quant Oracle</span>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>
+                    — watching {selectedProduct}
+                </span>
+
+                {/* Live agent signal dots */}
+                {agentSummary.length > 0 && (
+                    <div style={{ display: 'flex', gap: '0.35rem', marginLeft: '0.5rem' }}>
+                        {agentSummary.map(a => (
+                            <span key={a.name} title={`${a.name}: ${a.signal}`} style={{
+                                fontSize: '0.6rem', fontWeight: 700, padding: '0.1rem 0.35rem',
+                                borderRadius: '4px',
+                                background: a.signal === 'BUY' ? 'rgba(48,209,88,0.15)' : a.signal === 'SELL' ? 'rgba(255,69,58,0.15)' : 'rgba(255,255,255,0.06)',
+                                color: a.signal === 'BUY' ? '#30D158' : a.signal === 'SELL' ? '#FF453A' : 'var(--text-secondary)',
+                            }}>
+                                {a.name}
+                            </span>
+                        ))}
+                    </div>
                 )}
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {AGENTS.map(a => (
-                        <div key={a.id} style={{ position: 'relative', fontSize: '0.85rem', opacity: activeAgents.has(a.id) ? 1 : 0.5, transition: 'opacity 0.2s' }} title={a.name}>
-                            {a.emoji}
-                            {activeAgents.has(a.id) && (
-                                <div style={{ position: 'absolute', bottom: -2, right: -2, width: 6, height: 6, borderRadius: '50%', background: a.color, animation: 'pulse 1s ease-in-out infinite' }} />
-                            )}
-                        </div>
-                    ))}
-                    <span style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', marginLeft: '0.2rem' }}>
-                        {selectedProduct}
-                    </span>
-                    <button
-                        onClick={clearChat}
-                        title="Clear chat"
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '2px', display: 'flex', alignItems: 'center', marginLeft: '0.25rem' }}
-                    >
-                        <RefreshCw size={13} />
-                    </button>
-                </div>
+
+                <button onClick={clearChat} title="Clear chat" style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', padding: '0.2rem' }}>
+                    <RefreshCw size={14} />
+                </button>
             </div>
 
             {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0.85rem 1.1rem', scrollbarWidth: 'thin' }}>
-                {messages.map(msg => {
-                    if (msg.type === 'user')    return <UserBubble key={msg.id} text={msg.text} isNew={msg.isNew} />;
-                    if (msg.type === 'divider') return <SessionDivider key={msg.id} label={msg.label} />;
-                    if (msg.type === 'agent') {
-                        const agent = AGENT_BY_ID[msg.agentId] || AGENTS[4];
-                        return <AgentBubble key={msg.id} agent={agent} text={msg.text} thinking={msg.thinking} isNew={msg.isNew} />;
-                    }
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column' }}>
+                {messages.map(m => {
+                    if (m.type === 'oracle') return <OracleBubble key={m.id} text={m.text} thinking={m.thinking} isNew={m.isNew} />;
+                    if (m.type === 'user')   return <UserBubble key={m.id} text={m.text} isNew={m.isNew} />;
                     return null;
                 })}
                 <div ref={bottomRef} />
             </div>
 
-            {/* Quick prompts (only when no active loading) */}
+            {/* Starter prompts — only when no conversation yet */}
             {messages.length <= 1 && !loading && (
-                <div style={{ padding: '0 1.1rem 0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                    {STARTER_PROMPTS.map((p, i) => (
+                <div style={{ padding: '0 1.1rem 0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {STARTER_PROMPTS.map(p => (
                         <button
-                            key={i}
+                            key={p}
                             onClick={() => send(p)}
-                            disabled={loading || !wsConnected}
+                            disabled={!wsConnected}
                             style={{
-                                padding: '0.22rem 0.6rem', borderRadius: '20px',
-                                background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-primary)',
-                                color: 'var(--text-secondary)', fontSize: '0.65rem', cursor: 'pointer',
-                                transition: 'background 0.15s',
+                                padding: '0.3rem 0.7rem', borderRadius: '20px', cursor: 'pointer',
+                                background: 'rgba(10,132,255,0.08)', border: '1px solid rgba(10,132,255,0.2)',
+                                color: 'var(--text-secondary)', fontSize: '0.75rem',
+                                transition: 'all 0.15s',
                             }}
                         >
                             {p}
@@ -309,41 +258,39 @@ export default function SituationRoom() {
             )}
 
             {/* Input */}
-            <div style={{ padding: '0.6rem 1.1rem 0.85rem', borderTop: '1px solid var(--border-primary)', display: 'flex', gap: '0.45rem', alignItems: 'flex-end', flexShrink: 0 }}>
+            <div style={{
+                padding: '0.75rem 1.1rem', borderTop: '1px solid rgba(255,255,255,0.06)',
+                flexShrink: 0, display: 'flex', gap: '0.5rem', alignItems: 'flex-end',
+            }}>
                 <textarea
                     ref={inputRef}
                     value={input}
                     onChange={e => setInput(e.target.value)}
-                    onKeyDown={handleKey}
-                    placeholder={
-                        !wsConnected ? 'Connecting…'
-                        : loading ? 'Agents are responding…'
-                        : 'Ask the team anything… (Enter to send, Shift+Enter for newline)'
-                    }
-                    rows={2}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+                    placeholder={wsConnected ? "Ask the Oracle anything…" : "Connecting…"}
                     disabled={loading || !wsConnected}
+                    rows={1}
                     style={{
-                        flex: 1, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-primary)',
-                        borderRadius: '10px', padding: '0.5rem 0.75rem', color: 'var(--text-primary)',
-                        fontSize: '0.855rem', resize: 'none', fontFamily: 'inherit', lineHeight: 1.5, outline: 'none',
-                        opacity: loading ? 0.6 : 1,
+                        flex: 1, resize: 'none', background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.09)', borderRadius: '12px',
+                        color: 'var(--text-primary)', padding: '0.6rem 0.9rem',
+                        fontSize: '0.875rem', fontFamily: 'var(--font-ui)',
+                        outline: 'none', lineHeight: 1.5, maxHeight: '120px',
                     }}
                 />
                 <button
                     onClick={() => send()}
-                    disabled={!input.trim() || loading || !wsConnected}
+                    disabled={loading || !wsConnected || !input.trim()}
                     style={{
-                        width: 36, height: 36, borderRadius: '10px', border: 'none', flexShrink: 0,
-                        background: input.trim() && !loading && wsConnected ? 'var(--accent-blue)' : 'rgba(255,255,255,0.05)',
+                        width: 38, height: 38, borderRadius: '10px', flexShrink: 0,
+                        background: loading ? 'rgba(10,132,255,0.1)' : 'rgba(10,132,255,0.2)',
+                        border: '1px solid rgba(10,132,255,0.35)',
+                        color: 'var(--accent-blue)', cursor: loading ? 'not-allowed' : 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: input.trim() && !loading && wsConnected ? 'pointer' : 'default',
-                        marginBottom: '1px', transition: 'background 0.15s',
+                        transition: 'all 0.15s',
                     }}
                 >
-                    {loading
-                        ? <Loader size={14} color="var(--text-secondary)" style={{ animation: 'spin 0.9s linear infinite' }} />
-                        : <Send size={14} color="white" />
-                    }
+                    {loading ? <Loader size={15} style={{ animation: 'spin 0.9s linear infinite' }} /> : <Send size={15} />}
                 </button>
             </div>
         </div>

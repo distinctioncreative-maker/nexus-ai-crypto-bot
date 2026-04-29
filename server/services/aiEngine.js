@@ -1,7 +1,7 @@
 const userStore = require('../userStore');
 const axios = require('axios');
 const { getSignals, computeRotationScores } = require('./signalEngine');
-const { getAgentConsensus, tickShadowPortfolios, recordAgentLesson } = require('./strategyEngine');
+const { getAgentConsensus, recordAgentLesson } = require('./strategyEngine');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
@@ -122,8 +122,9 @@ async function evaluateMarketSignal(userId, candles, productId) {
         : '';
 
     // ── Agent Consensus (algorithmic, zero API cost) ──────────────────────────
+    // Note: tickShadowPortfolios is called from marketStream.js with the selected
+    // product's candles — not here — to avoid per-coin cross-contamination.
     const { votes, orion: consensusResult } = getAgentConsensus(userId, candles, signals);
-    try { tickShadowPortfolios(userId, candles, signals); } catch {}
 
     // ── Strong Consensus Bypass ────────────────────────────────────────────────
     // When 4+ of 5 specialist agents agree, skip the Groq synthesis call entirely.
@@ -347,12 +348,11 @@ const AGENT_PERSONAS = [
 ];
 
 /**
- * Situation Room: 5 agents in a persistent group chat.
- * - Accepts full conversation history so agents can reference prior exchanges.
- * - Round 1: 4 sub-agents respond in parallel, each aware of chat history.
- * - Round 2: Orion reads the full debate + history and gives the final verdict.
+ * Quant Oracle — single unified AI replacing the 5-agent debate.
+ * One Groq call instead of 6. Combines all agent perspectives in the system prompt.
+ * Includes live computed indicator values from the algorithmic engine.
  *
- * history: [{ role: 'user'|'agent', agentName?: string, content: string }]
+ * history: [{ role: 'user'|'agent', content: string }]
  */
 async function answerUserQueryMultiAgent(userId, userMessage, productId, onAgentResponse, history = []) {
     const state = userStore.getPaperState(userId);
@@ -366,83 +366,59 @@ async function answerUserQueryMultiAgent(userId, userMessage, productId, onAgent
 
     const fearGreedStr = signals?.fearGreed ? `${signals.fearGreed.value}/100 — ${signals.fearGreed.classification}` : 'N/A';
     const compositeStr = signals ? `${signals.compositeScore > 0 ? '+' : ''}${signals.compositeScore}` : 'N/A';
-    const learningContext = state.learningHistory.slice(0, 3).map((h, i) => `${i + 1}. ${h.knowledge}`).join('\n');
 
-    // Build agent lessons summary
     const user = userStore._ensureUser(userId);
-    const agentLessons = (user.strategies || [])
+
+    // Include computed algorithmic indicator signals so Oracle has real data
+    const strategies = user.strategies || [];
+    const agentSignals = strategies
+        .filter(s => s.id !== 'COMBINED' && s.lastSignal)
+        .map(s => `${s.name}(${s.id.split('_')[0]}): ${s.lastSignal} — Sharpe ${(s.sharpe || 0).toFixed(2)}, W${s.wins}/L${s.losses}`)
+        .join('\n') || 'No signals yet — engine not running';
+
+    const agentLessons = strategies
         .filter(s => s.lessons?.length > 0)
         .map(s => `${s.name}: ${s.lessons[0].lesson}`)
-        .join(' | ');
+        .join('\n') || 'No lessons recorded yet';
 
-    // Build conversation history summary (last 6 exchanges)
-    const recentHistory = history.slice(-6);
+    const newsHeadlines = Array.isArray(newsItems) ? newsItems.slice(0, 3).map(n => `• [${n.source}] ${n.headline}`).join('\n') : '';
+
+    const recentHistory = history.slice(-8);
     const historyText = recentHistory.length > 0
-        ? '\n=== PRIOR CONVERSATION ===\n' + recentHistory.map(m =>
-            m.role === 'user' ? `User: ${m.content}` : `${m.agentName || 'Agent'}: ${m.content}`
+        ? '\n=== CONVERSATION HISTORY ===\n' + recentHistory.map(m =>
+            m.role === 'user' ? `You: ${m.content}` : `Oracle: ${m.content}`
           ).join('\n') + '\n'
         : '';
 
-    const newsHeadlines = Array.isArray(newsItems) ? newsItems.slice(0, 2).map(n => `• [${n.source}] ${n.headline}`).join('\n') : '';
+    const systemPrompt = `You are the Quant Oracle — an elite quantitative AI trading advisor for a professional crypto terminal. You have internalized the expertise of five specialist agents: Atlas (momentum/EMA/MACD), Vera (mean reversion/RSI/Bollinger Bands), Rex (trend following/EMA cloud/ADX), Luna (sentiment/Fear&Greed/macro), and Nova (volume/OBV/MACD divergence). You synthesize all of their perspectives naturally in every response.
 
-    const sharedContext = `=== LIVE MARKET DATA ===
-Asset: ${product} | Balance: $${state.balance.toFixed(2)} | Holdings: ${state.assetHoldings} ${baseAsset}
-Engine: ${state.engineStatus || 'STOPPED'} | Mode: ${state.tradingMode || 'FULL_AUTO'}
-Fear & Greed: ${fearGreedStr} | Composite Signal: ${compositeStr}
-${newsHeadlines ? '=== BREAKING NEWS ===\n' + newsHeadlines + '\n' : ''}${historyText}
-=== AGENT SELF-LEARNED RULES ===
-${agentLessons || learningContext || 'No learned rules yet'}
+You have direct access to live portfolio state, computed indicator signals from these agents, and market data. You are direct, specific, and always cite the actual indicator values or agent signals you're referencing. Give clear recommendations — never hedge excessively. End every response with one of: LONG, FLAT, WATCH, or EXIT.`;
 
-=== NEW USER MESSAGE ===
-${userMessage}
+    const userPrompt = `=== PORTFOLIO ===
+${baseAsset} at $${Number(state.assetHoldings * (state.trades?.slice(-1)[0]?.price || 0)).toFixed(2) || 0} held | Cash: $${state.balance.toFixed(2)} | Engine: ${state.engineStatus || 'STOPPED'}
 
-Important: Reference the conversation history and what your fellow agents say. Stay in character.`;
+=== LIVE INDICATORS (computed) ===
+${agentSignals}
 
-    const subAgents = AGENT_PERSONAS.filter(a => a.id !== 'COMBINED');
-    const orionAgent = AGENT_PERSONAS.find(a => a.id === 'COMBINED');
-    const subAgentResponses = {};
+=== MACRO ===
+Fear & Greed: ${fearGreedStr} | Composite: ${compositeStr}
 
-    // Round 1: Sub-agents respond sequentially to avoid Groq 429 burst
-    for (const agent of subAgents) {
-        // Each agent gets context of what other agents have said in history
-        const priorAgentMessages = recentHistory
-            .filter(m => m.role === 'agent' && m.agentName !== agent.name)
-            .slice(-2)
-            .map(m => `${m.agentName}: "${m.content.slice(0, 100)}…"`)
-            .join('\n');
+=== AGENT LESSONS ===
+${agentLessons}
+${newsHeadlines ? '\n=== LATEST NEWS ===\n' + newsHeadlines : ''}${historyText}
 
-        const agentContext = priorAgentMessages
-            ? `${sharedContext}\n\nRecent team input:\n${priorAgentMessages}`
-            : sharedContext;
+=== QUESTION ===
+${userMessage}`;
 
-        try {
-            const text = await aiChat(agent.personality, agentContext, false, 200);
-            subAgentResponses[agent.name] = text;
-            onAgentResponse(agent.id, agent.name, agent.role, agent.color, text);
-        } catch (err) {
-            subAgentResponses[agent.name] = `[offline: ${err.message}]`;
-            onAgentResponse(agent.id, agent.name, agent.role, agent.color, subAgentResponses[agent.name]);
-        }
-    }
-
-    // Round 2: Orion synthesizes the full debate
-    const debateContext = Object.entries(subAgentResponses)
-        .map(([name, text]) => `${name}: ${text}`)
-        .join('\n\n');
-
-    const orionContext = `${sharedContext}
-
-=== THIS ROUND'S DEBATE ===
-${debateContext}
-
-You are Orion. Synthesize this debate. Call out where agents agree or disagree. Reference any conflicting signals.
-End with a clear LONG, FLAT, or WATCH stance and one actionable insight.`;
+    const ORACLE_ID = 'COMBINED';
+    const ORACLE_NAME = 'Quant Oracle';
+    const ORACLE_COLOR = '#0A84FF';
 
     try {
-        const text = await aiChat(orionAgent.personality, orionContext, false, 280);
-        onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, text);
+        const text = await aiChat(systemPrompt, userPrompt, false, 500);
+        onAgentResponse(ORACLE_ID, ORACLE_NAME, 'Chief Strategist', ORACLE_COLOR, text);
     } catch (err) {
-        onAgentResponse(orionAgent.id, orionAgent.name, orionAgent.role, orionAgent.color, `[offline: ${err.message}]`);
+        onAgentResponse(ORACLE_ID, ORACLE_NAME, 'Chief Strategist', ORACLE_COLOR, `[offline: ${err.message}]`);
     }
 }
 

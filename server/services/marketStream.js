@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const axios = require('axios');
-const { evaluateMarketSignal } = require('./aiEngine');
+const { evaluateMarketSignal, runAgentAutopsies } = require('./aiEngine');
+const { tickShadowPortfolios } = require('./strategyEngine');
 const userStore = require('../userStore');
 const { checkTradeAllowed, getSuggestedTradeSize } = require('./riskEngine');
 const { FALLBACK_PRODUCTS, isSupportedProduct } = require('./productCatalog');
@@ -305,6 +306,12 @@ async function executeTradeDecision(userId, productId, decision, price, history,
                 openPosition(userId, productId, finalAmount, price, defaultTpConfig(user.riskSettings));
             } else if (decision.action === 'SELL') {
                 closePosition(userId, productId);
+                // Run agent autopsies so agents record lessons from this trade
+                const entryTrade = user.paperTradingState?.trades?.find(t => t.type === 'BUY' && t.product === productId);
+                const entryPrice = entryTrade?.price || price;
+                const pnlPct = ((price - entryPrice) / entryPrice) * 100;
+                runAgentAutopsies(userId, productId, entryPrice, price, pnlPct)
+                    .catch(err => console.warn('Autopsy failed:', err.message));
             }
         }
     }
@@ -486,10 +493,21 @@ function startUserStream(userId, broadcastFn, initialProduct, initialWatchlist) 
 
         if (engine.engineStatus === 'STOPPED') {
             if (now % 10000 < 2200) {
-                broadcastFn('AI_STATUS', `Engine paused — click PAPER to start trading`);
+                broadcastFn('AI_STATUS', `Engine paused — click START ENGINE to begin paper trading`);
             }
             return;
         }
+
+        // ── Shadow portfolio tick (always runs when engine is running) ────────
+        // Uses SELECTED product candles so all agents track the same product consistently.
+        // This is separate from the Groq eval loop so shadow portfolios update every tick.
+        const selCandles = getProductData(selectedProduct).candles;
+        if (selCandles.length >= 5) {
+            try { tickShadowPortfolios(userId, selCandles, null); } catch {}
+        }
+
+        // Always broadcast latest strategy state so AgentsPage stays live
+        broadcastFn('STRATEGY_UPDATE', userStore.getStrategies(userId));
 
         // ── Multi-product AI evaluation loop ────────────────────────────────
         // Evaluate ONE product per tick to avoid Groq token burst (was parallel = all 5 at once).
