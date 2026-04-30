@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore';
 import { sendConfirmTrade } from '../services/websocket';
 
 export default function PendingTradeCard() {
-    const { pendingTrade, tradingMode } = useStore();
+    const { pendingTrade, tradingMode, wsConnected } = useStore();
     const [timeLeft, setTimeLeft] = useState(60);
     const [customAmount, setCustomAmount] = useState(null);
     const [timedOut, setTimedOut] = useState(false);
@@ -146,6 +146,12 @@ export default function PendingTradeCard() {
                         style={{ width: '100%', accentColor: accentColor }}
                     />
                 </div>
+
+                {!wsConnected && (
+                    <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem', background: 'rgba(255,159,10,0.1)', border: '1px solid rgba(255,159,10,0.3)', borderRadius: '8px', fontSize: '0.75rem', color: 'var(--accent-orange)' }}>
+                        ⚠ WebSocket disconnected — approval will be sent when reconnected. Trade remains open.
+                    </div>
+                )}
 
                 {/* Buttons */}
                 <div style={{ display: 'flex', gap: '0.75rem' }}>

@@ -224,12 +224,12 @@ function StrategyCard({ strategy, isLeader }) {
         borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)',
       }}>
         {[
-          { label: 'Win Rate', value: `${winRate}%`, color: winRate >= 55 ? 'var(--accent-green)' : winRate >= 45 ? 'var(--accent-orange)' : 'var(--accent-red)' },
-          { label: 'Sharpe',   value: (strategy.sharpe ?? 0).toFixed(2), color: (strategy.sharpe ?? 0) > 0.5 ? 'var(--accent-green)' : 'var(--text-secondary)' },
+          { label: 'Win Rate', value: `${winRate}%`, color: winRate >= 55 ? 'var(--accent-green)' : winRate >= 45 ? 'var(--accent-orange)' : 'var(--accent-red)', tooltip: `${totalTrades} shadow trades` },
+          { label: 'Sharpe',   value: (strategy.sharpe ?? 0).toFixed(2), color: (strategy.sharpe ?? 0) > 0.5 ? 'var(--accent-green)' : 'var(--text-secondary)', tooltip: closedTrades.length < 20 ? `Needs ${20 - closedTrades.length} more trades for reliable Sharpe` : `Based on ${closedTrades.length} closed trades` },
           { label: 'Trades',   value: totalTrades, color: 'var(--text-primary)' },
           { label: 'Drawdown', value: `${(strategy.maxDrawdown ?? 0).toFixed(1)}%`, color: (strategy.maxDrawdown ?? 0) > 10 ? 'var(--accent-red)' : 'var(--text-secondary)' },
         ].map(stat => (
-          <div key={stat.label} style={{ textAlign: 'center' }}>
+          <div key={stat.label} style={{ textAlign: 'center' }} title={stat.tooltip || undefined}>
             <div style={{ fontSize: '0.56rem', color: 'var(--text-secondary)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '0.2rem' }}>
               {stat.label}
             </div>
