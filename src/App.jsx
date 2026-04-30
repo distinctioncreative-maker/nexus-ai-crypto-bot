@@ -149,7 +149,7 @@ function App() {
           setBackendError('');
           initWebSocket();
         }} />
-        <DebugPanel />
+        {import.meta.env.DEV && <DebugPanel />}
       </div>
     );
   }
@@ -162,7 +162,14 @@ function App() {
           <div className="brand">
             <Bot className="logo-icon pulse" size={28} />
             <div className="brand-text">
-              <span className="brand-name text-gradient">Quant</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className="brand-name text-gradient">Quant</span>
+                {isLiveMode && (
+                  <span style={{ fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.08em', padding: '0.1rem 0.45rem', borderRadius: '4px', background: 'rgba(255,69,58,0.2)', color: 'var(--accent-red)', border: '1px solid rgba(255,69,58,0.4)' }}>
+                    LIVE
+                  </span>
+                )}
+              </div>
               <span className="version-tag">{user.email}</span>
             </div>
           </div>

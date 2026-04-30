@@ -107,6 +107,17 @@ export default function RiskSettingsModal() {
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
 
+    const validationError = (() => {
+        if (local.stopLossPercent >= local.takeProfitPercent) {
+            return 'Stop Loss % must be lower than Take Profit %.';
+        }
+        if (Array.isArray(local.multiTpLevels) && local.multiTpLevels.length > 0) {
+            const totalQty = local.multiTpLevels.reduce((s, l) => s + (l.qtyPct || 0), 0);
+            if (totalQty > 100) return `Multi-TP qty sums to ${totalQty}% — must be ≤ 100%.`;
+        }
+        return null;
+    })();
+
     const handleOpen = () => {
         setLocal({ ...riskSettings });
         setActiveTab('sizing');
@@ -411,9 +422,9 @@ export default function RiskSettingsModal() {
                             <div style={{ background: 'rgba(255,159,10,0.06)', border: '1px solid rgba(255,159,10,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem', marginBottom: '0.75rem', fontSize: '0.72rem', color: 'rgba(255,159,10,0.8)', lineHeight: 1.5 }}>
                                 Settings apply to all future trades. Crypto is highly volatile — never risk money you cannot afford to lose.
                             </div>
-                            {saveError && (
+                            {(validationError || saveError) && (
                                 <div style={{ marginBottom: '0.6rem', padding: '0.4rem 0.75rem', background: 'rgba(255,69,58,0.1)', border: '1px solid rgba(255,69,58,0.3)', borderRadius: '6px', fontSize: '0.75rem', color: 'var(--accent-red)' }}>
-                                    {saveError}
+                                    {validationError || saveError}
                                 </div>
                             )}
                             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
@@ -425,8 +436,9 @@ export default function RiskSettingsModal() {
                                 </button>
                                 <button
                                     onClick={handleSave}
-                                    disabled={saving}
-                                    style={{ padding: '0.5rem 1.4rem', background: 'rgba(10,132,255,0.15)', border: '1px solid rgba(10,132,255,0.4)', borderRadius: '8px', color: 'var(--accent-blue)', cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+                                    disabled={saving || !!validationError}
+                                    title={validationError || undefined}
+                                    style={{ padding: '0.5rem 1.4rem', background: (saving || validationError) ? 'rgba(255,255,255,0.04)' : 'rgba(10,132,255,0.15)', border: `1px solid ${(saving || validationError) ? 'rgba(255,255,255,0.1)' : 'rgba(10,132,255,0.4)'}`, borderRadius: '8px', color: (saving || validationError) ? 'var(--text-secondary)' : 'var(--accent-blue)', cursor: (saving || validationError) ? 'not-allowed' : 'pointer', fontWeight: 600 }}
                                 >
                                     {saving ? 'Saving…' : 'Save Settings'}
                                 </button>

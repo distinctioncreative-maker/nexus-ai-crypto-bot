@@ -13,7 +13,7 @@ const TYPE_ICONS = {
 };
 
 export default function NotificationCenter() {
-    const { notifications, unreadCount, markAllRead } = useStore();
+    const { notifications, unreadCount, markAllRead, clearNotifications } = useStore();
     const [open, setOpen] = useState(false);
     const containerRef = useRef(null);
 
@@ -97,21 +97,31 @@ export default function NotificationCenter() {
                         <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                             Notifications
                         </span>
-                        <button
-                            onClick={markAllRead}
-                            style={{
-                                background: 'none',
-                                border: 'none',
-                                color: 'var(--text-secondary)',
-                                cursor: 'pointer',
-                                fontSize: '0.75rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.3rem'
-                            }}
-                        >
-                            <CheckCheck size={12} /> Mark all read
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                                onClick={markAllRead}
+                                style={{
+                                    background: 'none', border: 'none',
+                                    color: 'var(--text-secondary)', cursor: 'pointer',
+                                    fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem'
+                                }}
+                            >
+                                <CheckCheck size={12} /> Mark all read
+                            </button>
+                            {notifications.length > 0 && (
+                                <button
+                                    onClick={clearNotifications}
+                                    style={{
+                                        background: 'none', border: 'none',
+                                        color: 'rgba(255,69,58,0.6)', cursor: 'pointer',
+                                        fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.2rem'
+                                    }}
+                                    title="Clear all notifications"
+                                >
+                                    Clear all
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     <div style={{ maxHeight: '360px', overflowY: 'auto' }}>

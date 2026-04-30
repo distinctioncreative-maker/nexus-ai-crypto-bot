@@ -193,10 +193,6 @@ class UserStore {
         user.paperTradingState.assetHoldings = saved?.assetHoldings ?? 0;
         user.paperTradingState.trades = saved?.trades ? [...saved.trades] : [];
 
-        // Reset circuit breaker per-product
-        user.circuitBreaker.tripped = false;
-        user.circuitBreaker.reason = '';
-
         // Clear absolute price targets — they were set for the previous product's price scale
         // (e.g. a $2.657 DOGE TP must not fire when switching to $77k BTC)
         user.riskSettings.takeProfitPrice = null;

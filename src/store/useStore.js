@@ -146,7 +146,9 @@ export const useStore = create((set) => ({
     // Kill switch
     killSwitchActive: false,
     killSwitchReason: '',
+    killSwitchPending: false,
     setKillSwitchActive: (active, reason = '') => set({ killSwitchActive: active, killSwitchReason: reason }),
+    setKillSwitchPending: (pending) => set({ killSwitchPending: pending }),
 
     // UI Features
     tutorialsActive: false,

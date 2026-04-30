@@ -5,6 +5,7 @@ import { debugLog } from '../components/DebugPanel';
 
 let ws = null;
 let deliberateClose = false;
+let wasDisconnected = false;
 
 export const initWebSocket = async () => {
     if (ws && ws.readyState === WebSocket.OPEN) return;
@@ -18,7 +19,13 @@ export const initWebSocket = async () => {
 
     ws.onopen = () => {
         useStore.getState().setWsConnected(true);
-        useStore.getState().setAiStatus('🟢 Active — Streaming Intelligence');
+        if (wasDisconnected) {
+            useStore.getState().setAiStatus('🟢 Connection restored — state synced');
+            setTimeout(() => useStore.getState().setAiStatus('🟢 Active — Streaming Intelligence'), 3000);
+            wasDisconnected = false;
+        } else {
+            useStore.getState().setAiStatus('🟢 Active — Streaming Intelligence');
+        }
         console.log("WebSocket Connected to Quant Core");
         debugLog('ws', '🟢 WS connected');
     };
@@ -149,6 +156,11 @@ export const initWebSocket = async () => {
                 debugLog('error', `🛑 KILL_SWITCH_ALERT: ${message.payload?.reason || '(no reason)'}`);
                 break;
 
+            case 'KILL_SWITCH_ACK':
+                store.setKillSwitchPending(false);
+                store.setKillSwitchActive(!!message.payload?.active, message.payload?.reason || '');
+                break;
+
             case 'SERVER_LOG': {
                 const { level, source, message: msg, detail } = message.payload || {};
                 const icon = level === 'error' ? '✗' : level === 'warn' ? '⚠' : 'ℹ';
@@ -182,6 +194,7 @@ export const initWebSocket = async () => {
     ws.onclose = () => {
         useStore.getState().setWsConnected(false);
         if (!deliberateClose) {
+            wasDisconnected = true;
             useStore.getState().setAiStatus('🔴 Connection Lost — Reconnecting…');
         }
         ws = null;
@@ -224,7 +237,10 @@ export const sendConfirmTrade = (tradeId, accepted, amount) => {
 
 export const sendKillSwitch = (activate, reason = '') => {
     if (ws && ws.readyState === WebSocket.OPEN) {
+        useStore.getState().setKillSwitchPending(true);
         ws.send(JSON.stringify({ type: 'KILL_SWITCH', payload: { activate, reason } }));
+        // Safety fallback: clear pending state after 4s if no ACK received
+        setTimeout(() => useStore.getState().setKillSwitchPending(false), 4000);
     }
 };
 

@@ -15,6 +15,9 @@ const supabase = supabaseUrl && supabaseServiceKey
 const authenticate = async (req, res, next) => {
     // Skip auth in local dev if Supabase is not configured
     if (!supabase) {
+        if (process.env.NODE_ENV === 'production') {
+            return res.status(503).json({ error: 'Authentication service is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.' });
+        }
         req.userId = 'local-dev-user';
         return next();
     }

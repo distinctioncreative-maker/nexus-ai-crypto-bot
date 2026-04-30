@@ -17,6 +17,12 @@
 .live-mode {
   background: radial-gradient(circle at top right, rgba(255, 69, 58, 0.1), transparent 50%),
               radial-gradient(circle at bottom left, rgba(255, 159, 10, 0.05), transparent 50%);
+  border-top: 2px solid rgba(255, 69, 58, 0.6);
+}
+
+.live-mode .top-nav {
+  border-bottom: 1px solid rgba(255, 69, 58, 0.25);
+  background: rgba(255, 69, 58, 0.04);
 }
 
 .main-content {

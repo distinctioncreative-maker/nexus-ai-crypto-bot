@@ -7,17 +7,22 @@ export default function PendingTradeCard() {
     const { pendingTrade, tradingMode } = useStore();
     const [timeLeft, setTimeLeft] = useState(60);
     const [customAmount, setCustomAmount] = useState(null);
+    const [timedOut, setTimedOut] = useState(false);
 
     useEffect(() => {
-        if (!pendingTrade) { setTimeLeft(60); return; }
+        if (!pendingTrade) { setTimeLeft(60); setTimedOut(false); return; }
         setCustomAmount(pendingTrade.amount);
+        setTimedOut(false);
 
         const interval = setInterval(() => {
             const remaining = Math.max(0, Math.floor((pendingTrade.expiresAt - Date.now()) / 1000));
             setTimeLeft(remaining);
             if (remaining <= 0) {
-                sendConfirmTrade(pendingTrade.tradeId, false);
+                setTimedOut(true);
                 clearInterval(interval);
+                setTimeout(() => {
+                    sendConfirmTrade(pendingTrade.tradeId, false);
+                }, 2500);
             }
         }, 500);
 
@@ -63,10 +68,17 @@ export default function PendingTradeCard() {
                             AI Assisted — Your confirmation required
                         </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: timeLeft < 15 ? 'var(--accent-red)' : 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                        <Clock size={14} />
-                        {timeLeft}s
-                    </div>
+                    {timedOut ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--accent-orange)', fontSize: '0.8rem', fontWeight: 700 }}>
+                            <Clock size={14} />
+                            TIMED OUT
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: timeLeft < 15 ? 'var(--accent-red)' : 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                            <Clock size={14} />
+                            {timeLeft}s
+                        </div>
+                    )}
                 </div>
 
                 {/* Timer bar */}

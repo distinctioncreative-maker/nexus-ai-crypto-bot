@@ -459,7 +459,7 @@ function tickShadowPortfolios(userId, candles, signals) {
 
 function updateAgentSharpe(strategy) {
     const trades = strategy.shadowPortfolio?.closedTrades || [];
-    if (trades.length < 3) return;
+    if (trades.length < 20) return;
     const returns = trades.map(t => t.pnlPct);
     const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
     const variance = returns.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / (returns.length - 1); // sample variance
@@ -488,7 +488,7 @@ function runTournamentCycle(userId) {
     // Mutate bottom performer's parameters
     const loser = ranked[ranked.length - 1];
     if (loser && loser.id !== 'COMBINED') {
-        const mutated = mutatePameters(loser.parameters || {});
+        const mutated = mutateParameters(loser.parameters || {});
         loser.parameters = mutated;
         loser.generation = (loser.generation || 1) + 1;
         loser.wins = 0;
@@ -513,7 +513,7 @@ function runTournamentCycle(userId) {
         .catch(err => console.warn('saveStrategies (tournament) failed:', err.message));
 }
 
-function mutatePameters(params) {
+function mutateParameters(params) {
     const mutate = (val, min, max) => {
         if (val == null) return null;
         const delta = val * (Math.random() * 0.3 - 0.15); // ±15%

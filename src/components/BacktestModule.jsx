@@ -3,7 +3,7 @@ import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { PlayCircle, SlidersHorizontal, TrendingUp } from 'lucide-react';
+import { PlayCircle, SlidersHorizontal, TrendingUp, Loader } from 'lucide-react';
 import { authFetch } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
 
@@ -199,7 +199,16 @@ export default function BacktestModule() {
 
         {/* Results */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-          {error && (
+          {isRunning && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', padding: '3rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px' }}>
+              <Loader size={28} color="var(--accent-blue)" style={{ animation: 'spin 0.9s linear infinite' }} />
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.3rem' }}>Running backtest…</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Fetching historical OHLCV from CoinGecko · {days} days · {strategy === 'COMBINED' ? 'Orion' : strategy}</div>
+              </div>
+            </div>
+          )}
+          {error && !isRunning && (
             <div style={{ padding: '1rem', background: 'rgba(255,69,58,0.08)', border: '1px solid rgba(255,69,58,0.3)', borderRadius: '10px', color: 'var(--accent-red)', fontSize: '0.8rem' }}>
               {error}
             </div>

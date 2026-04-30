@@ -6,6 +6,7 @@ const WebSocket = require('ws');
 const apiRoutes = require('./routes/api');
 const { startUserStream, ensureMarketConnection } = require('./services/marketStream');
 const userStore = require('./userStore');
+const { isSupportedProduct } = require('./services/productCatalog');
 const { createClient } = require('@supabase/supabase-js');
 const { loadUserState, saveUserSettings } = require('./db/persistence');
 
@@ -151,10 +152,14 @@ wss.on('connection', async (ws, req) => {
 
             if (msg.type === 'CHANGE_PRODUCT' && msg.payload?.productId) {
                 const newProduct = msg.payload.productId;
-                const changed = await setProduct(newProduct);
-                if (changed) {
-                    console.log(`🔀 User ${userId} switched to ${newProduct}`);
-                    sendPortfolioState();
+                if (!isSupportedProduct(newProduct)) {
+                    console.warn(`⚠️ User ${userId} sent unsupported productId: ${newProduct}`);
+                } else {
+                    const changed = await setProduct(newProduct);
+                    if (changed) {
+                        console.log(`🔀 User ${userId} switched to ${newProduct}`);
+                        sendPortfolioState();
+                    }
                 }
             }
 
@@ -169,6 +174,7 @@ wss.on('connection', async (ws, req) => {
                     userStore.tripKillSwitch(userId, msg.payload.reason || 'Manual kill switch');
                     const u = userStore._ensureUser(userId);
                     sendData('KILL_SWITCH_ALERT', { reason: u.killSwitchReason });
+                    sendData('KILL_SWITCH_ACK', { active: true, reason: u.killSwitchReason });
                     // Cancel open Coinbase orders if user is in live mode
                     if (u.isLiveMode) {
                         const keys = userStore.getKeys(userId);
@@ -182,6 +188,7 @@ wss.on('connection', async (ws, req) => {
                 } else {
                     userStore.resetKillSwitch(userId);
                     sendData('KILL_SWITCH_ALERT', { reason: null });
+                    sendData('KILL_SWITCH_ACK', { active: false, reason: null });
                 }
             }
 

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { ShieldOff, AlertTriangle, X } from 'lucide-react';
+import { ShieldOff, AlertTriangle, X, Loader } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { sendKillSwitch } from '../services/websocket';
 
 export default function KillSwitch() {
-    const { killSwitchActive, killSwitchReason, engineStatus } = useStore();
+    const { killSwitchActive, killSwitchReason, killSwitchPending, engineStatus } = useStore();
     const [showConfirm, setShowConfirm] = useState(false);
 
     // Show whenever engine is running (paper OR live) or kill switch is already active
@@ -21,7 +21,18 @@ export default function KillSwitch() {
 
     return (
         <>
-            {killSwitchActive ? (
+            {killSwitchPending ? (
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '0.5rem',
+                    padding: '0.35rem 0.75rem',
+                    background: 'rgba(255, 159, 10, 0.12)',
+                    border: '1px solid rgba(255, 159, 10, 0.35)',
+                    borderRadius: '8px', fontSize: '0.75rem', color: 'var(--accent-orange)',
+                }}>
+                    <Loader size={13} style={{ animation: 'spin 0.9s linear infinite' }} />
+                    CONFIRMING…
+                </div>
+            ) : killSwitchActive ? (
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',

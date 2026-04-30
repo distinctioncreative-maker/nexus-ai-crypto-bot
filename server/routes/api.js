@@ -73,8 +73,8 @@ router.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Public: debug info — lists loaded env vars (keys masked) and route count
-router.get('/debug', (req, res) => {
+// Protected: debug info — lists loaded env vars (keys masked) and route count
+router.get('/debug', authenticate, (req, res) => {
     let routes = [];
     try {
         routes = (router.stack || [])
