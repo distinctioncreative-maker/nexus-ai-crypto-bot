@@ -659,7 +659,14 @@ export default function Dashboard() {
                             textAlign: 'center'
                         }}
                     />
-                    <div ref={chartContainerRef} style={{ width: '100%', height: '380px' }} />
+                    <div ref={chartContainerRef} style={{ width: '100%', height: '380px' }}>
+                        {candleHistory.length === 0 && (
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', color: 'var(--text-secondary)', fontSize: '0.8rem', pointerEvents: 'none' }}>
+                                <div style={{ width: 24, height: 24, border: '2px solid rgba(10,132,255,0.25)', borderTopColor: 'var(--accent-blue)', borderRadius: '50%', animation: 'spin 0.9s linear infinite' }} />
+                                <span>Loading chart…</span>
+                            </div>
+                        )}
+                    </div>
                 </motion.div>
 
                 <motion.div className="glass-panel widget trades-list" variants={itemVariants} style={{ maxHeight: '480px' }}>

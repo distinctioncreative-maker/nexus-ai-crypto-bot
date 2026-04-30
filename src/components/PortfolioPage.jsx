@@ -117,7 +117,7 @@ function TradeRow({ trade }) {
 }
 
 export default function PortfolioPage() {
-    const { balance, assetHoldings, selectedProduct, trades, productHoldings, productPrices } = useStore();
+    const { balance, assetHoldings, selectedProduct, trades, productHoldings, productPrices, wsConnected } = useStore();
 
     // Build the full list of positions (selected product + all other held products)
     const allPositions = useMemo(() => {
@@ -204,6 +204,15 @@ export default function PortfolioPage() {
         }
         return data;
     }, [allPositions, balance, totalPortfolio]);
+
+    if (!wsConnected && balance === 0 && trades.length === 0) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', minHeight: '40vh', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                <div style={{ width: 32, height: 32, border: '3px solid rgba(10,132,255,0.25)', borderTopColor: 'var(--accent-blue)', borderRadius: '50%', animation: 'spin 0.9s linear infinite' }} />
+                <span>Loading portfolio…</span>
+            </div>
+        );
+    }
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
