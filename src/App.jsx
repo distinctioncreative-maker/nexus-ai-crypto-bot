@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { Bot, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Radio, KeyRound, ShieldAlert, MoreHorizontal } from 'lucide-react';
 import { useStore } from './store/useStore';
@@ -41,7 +41,7 @@ function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
   const [sessionWarning, setSessionWarning] = useState(false);
-  const sessionWarnTimerRef = React.useRef(null);
+  const sessionWarnTimerRef = useRef(null);
 
   // Listen for Supabase auth state changes
   useEffect(() => {
