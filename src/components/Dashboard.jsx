@@ -54,7 +54,10 @@ export default function Dashboard() {
         return val;
     }, [assetHoldings, currentPrice, productHoldings, productPrices, selectedProduct]);
 
-    const totalPortfolioValue = balance + totalPositionsValue;
+    // Defensive clamp — if backend sends corrupted state (billions), show $0 until next update
+    const safeBalance = Math.max(0, Math.min(balance, 10_000_000));
+    const safePositionsValue = Math.min(totalPositionsValue, 10_000_000);
+    const totalPortfolioValue = safeBalance + safePositionsValue;
     const initialBalance = 100000;
     const totalPnl = totalPortfolioValue - initialBalance;
     const totalPnlPct = (totalPnl / initialBalance) * 100;
@@ -326,7 +329,7 @@ export default function Dashboard() {
                 <div className="glass-panel metric-card">
                     <div className="metric-label">Portfolio Balance ({isLiveMode ? 'Real' : 'Paper'})</div>
                     <div className="metric-value">
-                        ${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${safeBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </div>
                 </div>
 

@@ -64,14 +64,24 @@ async function loadUserState(supabase, userId) {
         let balance = !isNaN(rawBalance) && rawBalance >= 0 ? rawBalance : 100000;
         const productHoldings = settings.product_holdings || {};
 
-        // Sanity check: detect impossible state — negative stored balance or holdings
-        // implying portfolio > $500k (impossible from $100k starting capital legitimately).
+        // Sanity check: detect impossible state.
+        // Uses _lastPrice where available; falls back to a conservative floor price so
+        // holdings with missing prices are still caught (bug: _lastPrice was sometimes
+        // absent, letting 22M AAVE slip through with estimate=$0 → billions at runtime).
+        const FLOOR_PRICE_PER_UNIT = 0.01; // $0.01/unit minimum — even SHIB is > this
         const holdingsEstimate = Object.values(productHoldings).reduce((sum, h) => {
-            if (!h || !h.assetHoldings || !h._lastPrice) return sum;
-            return sum + (h.assetHoldings * h._lastPrice);
+            if (!h || !h.assetHoldings) return sum;
+            const price = (h._lastPrice > 0) ? h._lastPrice : FLOOR_PRICE_PER_UNIT;
+            return sum + (h.assetHoldings * price);
         }, 0);
         const portfolioEstimate = balance + holdingsEstimate;
-        const isCorrupted = (!isNaN(rawBalance) && rawBalance < -100) || portfolioEstimate > 500_000;
+        // Also flag any single holding with > 1M units (impossible from $100k starting capital
+        // for any coin worth more than $0.10; protects against reconciliation ghost quantities)
+        const hasGhostHoldings = Object.values(productHoldings).some(
+            h => h && h.assetHoldings > 1_000_000
+        );
+        const isCorrupted = (!isNaN(rawBalance) && rawBalance < -100) ||
+            portfolioEstimate > 500_000 || hasGhostHoldings;
 
         if (isCorrupted) {
             console.warn(`⚠️ Corrupted portfolio state detected for user ${userId} (est. $${portfolioEstimate.toFixed(0)}) — auto-resetting to $100k`);
