@@ -53,51 +53,42 @@ async function loadUserState(supabase, userId) {
             console.error('Key decryption failed for user', userId, e.message);
         }
 
-        // Recompute per-product holdings from trade history to guard against stale DB snapshots.
-        // If the saved snapshot disagrees with trade history by more than a tiny rounding error,
-        // trust the trade history (it's the ground truth).
-        const savedHoldings = settings.product_holdings || {};
         const normalizedTrades = (trades || []).map(normalizeTradeRow);
-        const computedHoldings = {};
-        for (const t of [...normalizedTrades].reverse()) { // oldest first
-            const pid = t.product || 'BTC-USD';
-            if (!computedHoldings[pid]) computedHoldings[pid] = 0;
-            if (t.type === 'BUY')  computedHoldings[pid] += t.amount;
-            if (t.type === 'SELL') computedHoldings[pid] = Math.max(0, computedHoldings[pid] - t.amount);
-        }
-        // Merge: prefer computed for products we have trade history for; keep saved for the rest
-        const productHoldings = { ...savedHoldings };
-        for (const [pid, computedQty] of Object.entries(computedHoldings)) {
-            const savedQty = savedHoldings[pid]?.assetHoldings ?? 0;
-            if (Math.abs(computedQty - savedQty) > 0.000001) {
-                // Discrepancy — trust computed from trade history
-                productHoldings[pid] = {
-                    ...(savedHoldings[pid] || {}),
-                    assetHoldings: computedQty
-                };
-            }
+
+        // Trust the stored balance/holdings from user_settings — these are saved by
+        // saveTradeState after every trade execution, making them the ground truth.
+        // Previous reconciliation logic was incorrect because trade history spans
+        // multiple server restart cycles (each starting at $100k), so recomputing
+        // balance from raw trade history produces deeply negative impossible values.
+        let balance = Math.max(0, parseFloat(settings.balance) || 100000);
+        const productHoldings = settings.product_holdings || {};
+
+        // Sanity check: detect impossible state (negative balance or holdings implying
+        // portfolio > $2M — impossible with $100k starting capital without huge leverage).
+        const holdingsEstimate = Object.values(productHoldings).reduce((sum, h) => {
+            if (!h || !h.assetHoldings || !h._lastPrice) return sum;
+            return sum + (h.assetHoldings * h._lastPrice);
+        }, 0);
+        const portfolioEstimate = balance + holdingsEstimate;
+        // Also flag negative balance as corrupted — impossible in paper trading
+        const isCorrupted = balance < -100 || portfolioEstimate > 500_000 || portfolioEstimate < -1000;
+
+        if (isCorrupted) {
+            console.warn(`⚠️ Corrupted portfolio state detected for user ${userId} (est. $${portfolioEstimate.toFixed(0)}) — auto-resetting to $100k`);
+            balance = 100000;
+            // Wipe corrupted holdings and corrupted trades in DB
+            Object.keys(productHoldings).forEach(k => delete productHoldings[k]);
+            await supabase.from('user_settings').upsert({
+                user_id: userId, balance: 100000, asset_holdings: 0,
+                product_holdings: {}, updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+            await supabase.from('paper_trades').delete().eq('user_id', userId);
+            console.log(`✅ Auto-reset complete for user ${userId}`);
         }
 
-        // Recompute balance from trade history as a cross-check.
-        // If stored balance differs significantly from what the trades imply, use the computed value.
-        const PAPER_FRICTION_APPROX = 0.007; // ~0.7% per side (fee + slippage)
-        let computedBalance = 100000;
-        for (const t of [...normalizedTrades].reverse()) {
-            const cost = t.amount * t.price;
-            if (t.type === 'BUY')  computedBalance -= cost * (1 + PAPER_FRICTION_APPROX);
-            if (t.type === 'SELL') computedBalance += cost * (1 - PAPER_FRICTION_APPROX);
-        }
-        const storedBalance = parseFloat(settings.balance) || 100000;
-        // Use computed balance if stored is more than $500 off AND trade history is long enough
-        const balance = (normalizedTrades.length >= 10 && Math.abs(computedBalance - storedBalance) > 500)
-            ? computedBalance
-            : storedBalance;
-
-        // Recompute assetHoldings for the selected product from productHoldings
         const selectedProduct = settings.selected_product || 'BTC-USD';
         const assetHoldings = productHoldings[selectedProduct]?.assetHoldings
-            ?? parseFloat(settings.asset_holdings)
-            ?? 0;
+            ?? Math.max(0, parseFloat(settings.asset_holdings) ?? 0);
 
         return {
             keys: {

@@ -3,8 +3,10 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   AreaChart, Area,
 } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Clock, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { authFetch } from '../lib/supabase';
+import { apiUrl } from '../lib/api';
 
 const ASSET_COLORS = {
     'BTC-USD': '#F7931A', 'ETH-USD': '#627EEA', 'SOL-USD': '#9945FF',
@@ -117,7 +119,26 @@ function TradeRow({ trade }) {
 }
 
 export default function PortfolioPage() {
-    const { balance, assetHoldings, selectedProduct, trades, productHoldings, productPrices, wsConnected } = useStore();
+    const { balance, assetHoldings, selectedProduct, trades, productHoldings, productPrices, wsConnected, setBalance, setTrades, setProductHoldings } = useStore();
+    const [resetting, setResetting] = useState(false);
+    const [resetConfirm, setResetConfirm] = useState(false);
+
+    const handleReset = async () => {
+        if (!resetConfirm) { setResetConfirm(true); return; }
+        setResetting(true);
+        try {
+            await authFetch(apiUrl('/api/reset-paper-portfolio'), { method: 'POST' });
+            // Clear local state immediately so UI reflects reset
+            setBalance(100000);
+            setTrades([]);
+            setProductHoldings({});
+            setResetConfirm(false);
+        } catch (err) {
+            console.error('Reset failed:', err);
+        } finally {
+            setResetting(false);
+        }
+    };
 
     // Build the full list of positions (selected product + all other held products)
     const allPositions = useMemo(() => {
@@ -157,7 +178,10 @@ export default function PortfolioPage() {
         [allPositions]
     );
 
-    const totalPortfolio = balance + totalHoldingsValue;
+    // Clamp to sane range — defensive guard against corrupted server state
+    const safeBalance = Math.max(0, Math.min(balance, 10_000_000));
+    const safeHoldingsValue = Math.min(totalHoldingsValue, 10_000_000);
+    const totalPortfolio = safeBalance + safeHoldingsValue;
     const totalPnl = totalPortfolio - INITIAL_BALANCE;
     const totalPnlPct = (totalPnl / INITIAL_BALANCE) * 100;
 
@@ -241,8 +265,8 @@ export default function PortfolioPage() {
                 });
             }
         }
-        if (balance > 0 && totalPortfolio > 0) {
-            data.push({ name: 'USD', value: (balance / totalPortfolio) * 100, color: 'rgba(255,255,255,0.3)' });
+        if (safeBalance > 0 && totalPortfolio > 0) {
+            data.push({ name: 'USD', value: (safeBalance / totalPortfolio) * 100, color: 'rgba(255,255,255,0.3)' });
         }
         return data;
     }, [allPositions, balance, totalPortfolio]);
@@ -309,10 +333,10 @@ export default function PortfolioPage() {
                         Cash Balance
                     </div>
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.35rem', fontWeight: 700 }}>
-                        ${balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${safeBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
-                        {totalPortfolio > 0 ? ((balance / totalPortfolio) * 100).toFixed(1) : '100.0'}% of portfolio
+                        {totalPortfolio > 0 ? ((safeBalance / totalPortfolio) * 100).toFixed(1) : '100.0'}% of portfolio
                     </div>
                 </div>
 
@@ -414,7 +438,7 @@ export default function PortfolioPage() {
                                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'rgba(255,255,255,0.3)' }} />
                                 <span style={{ fontWeight: 700 }}>USD</span>
                             </div>
-                            <span style={{ color: 'var(--text-secondary)' }}>{balance.toFixed(2)}</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>{safeBalance.toFixed(2)}</span>
                             <span style={{ color: 'var(--text-secondary)' }}>$1.00</span>
                             <span>$1.00</span>
                             <span style={{ color: 'var(--text-secondary)' }}>—</span>
@@ -441,7 +465,25 @@ export default function PortfolioPage() {
                     <div className="glass-panel widget">
                         <div className="widget-header">
                             <h2 className="widget-title"><Clock size={13} /> Trade History</h2>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{trades.length} trades</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{trades.length} trades</span>
+                                <button
+                                    onClick={handleReset}
+                                    disabled={resetting}
+                                    title={resetConfirm ? 'Click again to confirm reset' : 'Reset paper portfolio to $100k'}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '0.3rem',
+                                        padding: '0.2rem 0.55rem', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                                        fontSize: '0.65rem', fontWeight: 700,
+                                        background: resetConfirm ? 'rgba(255,69,58,0.18)' : 'rgba(255,255,255,0.06)',
+                                        color: resetConfirm ? 'var(--accent-red)' : 'var(--text-secondary)',
+                                        transition: 'all 0.15s',
+                                    }}
+                                >
+                                    <RotateCcw size={10} />
+                                    {resetting ? 'Resetting…' : resetConfirm ? 'Confirm Reset' : 'Reset'}
+                                </button>
+                            </div>
                         </div>
                         <div style={{ overflowY: 'auto', maxHeight: '300px' }}>
                             {trades.length === 0 ? (

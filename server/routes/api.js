@@ -354,6 +354,35 @@ router.get('/ai-status', authenticate, async (req, res) => {
     res.json({ provider: 'ollama', ...result });
 });
 
+// Protected: reset paper portfolio — clears all trades, resets balance to $100k
+router.post('/reset-paper-portfolio', authenticate, async (req, res) => {
+    const userId = req.userId;
+    try {
+        // Reset in-memory state
+        const user = userStore._ensureUser(userId);
+        user.paperTradingState.balance = 100000;
+        user.paperTradingState.assetHoldings = 0;
+        user.paperTradingState.trades = [];
+        user.paperTradingState.learningHistory = [];
+        user.productHoldings = {};
+
+        // Reset in DB
+        if (supabase) {
+            await supabase.from('user_settings').upsert({
+                user_id: userId, balance: 100000, asset_holdings: 0,
+                product_holdings: {}, updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+            await supabase.from('paper_trades').delete().eq('user_id', userId);
+        }
+
+        console.log(`🔄 Paper portfolio reset for user ${userId}`);
+        res.json({ success: true, message: 'Paper portfolio reset to $100,000', balance: 100000 });
+    } catch (err) {
+        console.error('reset-paper-portfolio error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Protected: Situation Room — AI agents answer free-form user questions with live context
 router.post('/situation-room', authenticate, async (req, res) => {
     const { message, productId, history } = req.body;

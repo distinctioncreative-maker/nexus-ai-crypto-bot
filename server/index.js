@@ -112,6 +112,11 @@ wss.on('connection', async (ws, req) => {
         if (requestUrl.searchParams.get('product')) {
             userStore.setSelectedProduct(userId, initialProduct);
         }
+    } else if (supabase) {
+        // No user_settings row — create one now with defaults so future restarts
+        // don't accumulate buy trades against repeated $100k resets.
+        saveUserSettings(supabase, userId, userStore._ensureUser(userId))
+            .catch(err => console.warn('Initial user_settings create failed:', err.message));
     }
 
     // Send current portfolio state immediately on connect so the UI initialises correctly
