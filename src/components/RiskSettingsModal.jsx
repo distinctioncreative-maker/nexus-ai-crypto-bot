@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Settings, X, Info, Scale, ShieldCheck, TrendingUp } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Settings, X, Info, Scale, ShieldCheck, TrendingUp, CheckCircle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { authFetch } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
@@ -99,6 +99,40 @@ const TABS = [
     { id: 'smart',  label: 'Smart Trade', icon: TrendingUp, desc: 'Advanced automated exit strategies' },
 ];
 
+const LABEL_MAP = {
+    maxTradePercent: 'Per-Trade Max %',
+    dailyLossLimitPercent: 'Daily Loss Limit %',
+    maxSingleOrderUSD: 'Max Single Order USD',
+    maxPositionPercent: 'Max Position Size %',
+    volatilityReduceThreshold: 'Volatility Reduce Threshold %',
+    stopLossPercent: 'Stop Loss %',
+    takeProfitPercent: 'Take Profit %',
+    enableKellySize: 'Kelly Criterion',
+    stopLossPrice: 'Stop Loss Price',
+    takeProfitPrice: 'Take Profit Price',
+    trailingStopPct: 'Trailing Stop %',
+    multiTpLevels: 'Multi Take-Profit',
+};
+
+function buildDiff(prev, next) {
+    const changes = [];
+    for (const key of Object.keys(LABEL_MAP)) {
+        const a = prev[key], b = next[key];
+        const aStr = JSON.stringify(a), bStr = JSON.stringify(b);
+        if (aStr !== bStr) {
+            const label = LABEL_MAP[key] || key;
+            if (key === 'multiTpLevels') {
+                changes.push(`${label}: ${a ? `${a.length} levels` : 'off'} → ${b ? `${b.length} levels` : 'off'}`);
+            } else if (typeof b === 'boolean') {
+                changes.push(`${label}: ${a ? 'on' : 'off'} → ${b ? 'on' : 'off'}`);
+            } else {
+                changes.push(`${label}: ${a ?? '—'} → ${b ?? '—'}`);
+            }
+        }
+    }
+    return changes;
+}
+
 export default function RiskSettingsModal() {
     const { riskSettings, setRiskSettings } = useStore();
     const [open, setOpen] = useState(false);
@@ -106,6 +140,8 @@ export default function RiskSettingsModal() {
     const [local, setLocal] = useState({ ...riskSettings });
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
+    const [undoToast, setUndoToast] = useState(null);
+    const undoTimerRef = useRef(null);
 
     const validationError = (() => {
         if (local.stopLossPercent >= local.takeProfitPercent) {
@@ -127,6 +163,8 @@ export default function RiskSettingsModal() {
     const handleSave = async () => {
         setSaving(true);
         setSaveError('');
+        const prevSettings = { ...riskSettings };
+        const changes = buildDiff(prevSettings, local);
         try {
             const res = await authFetch(apiUrl('/api/risk-settings'), {
                 method: 'POST',
@@ -137,6 +175,10 @@ export default function RiskSettingsModal() {
             if (data.error) { setSaveError(data.error); return; }
             if (data.riskSettings) setRiskSettings(data.riskSettings);
             setOpen(false);
+            // Show undo toast for 5s
+            clearTimeout(undoTimerRef.current);
+            setUndoToast({ prev: prevSettings, changes });
+            undoTimerRef.current = setTimeout(() => setUndoToast(null), 5000);
         } catch (err) {
             setSaveError(err.message || 'Failed to save. Check your connection.');
         } finally {
@@ -144,10 +186,54 @@ export default function RiskSettingsModal() {
         }
     };
 
+    const handleUndo = async () => {
+        clearTimeout(undoTimerRef.current);
+        const prev = undoToast?.prev;
+        setUndoToast(null);
+        if (!prev) return;
+        try {
+            const res = await authFetch(apiUrl('/api/risk-settings'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(prev)
+            });
+            const data = await res.json();
+            if (data.riskSettings) setRiskSettings(data.riskSettings);
+        } catch { /* silent */ }
+    };
+
     const set = (key, val) => setLocal(l => ({ ...l, [key]: val }));
+
+    const diffPreview = open ? buildDiff(riskSettings, local) : [];
 
     return (
         <>
+            {/* Undo toast */}
+            {undoToast && (
+                <div style={{
+                    position: 'fixed', bottom: 'calc(80px + env(safe-area-inset-bottom))', left: '50%',
+                    transform: 'translateX(-50%)', zIndex: 9500,
+                    background: 'rgba(16,16,20,0.97)', border: '1px solid rgba(48,209,88,0.3)',
+                    borderRadius: '12px', padding: '0.65rem 1rem',
+                    display: 'flex', alignItems: 'center', gap: '0.75rem',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.5)', minWidth: 260, maxWidth: 'calc(100vw - 32px)',
+                    animation: 'fadeSlideIn 0.2s ease',
+                }}>
+                    <CheckCircle size={16} color="var(--accent-green)" style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, fontSize: '0.8rem' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.15rem' }}>Settings saved</div>
+                        {undoToast.changes.length > 0 && (
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                {undoToast.changes.slice(0, 3).join(' · ')}{undoToast.changes.length > 3 ? ` +${undoToast.changes.length - 3} more` : ''}
+                            </div>
+                        )}
+                    </div>
+                    <button onClick={handleUndo} style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '6px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.75rem', padding: '0.25rem 0.6rem', fontWeight: 600, flexShrink: 0 }}>
+                        Undo
+                    </button>
+                </div>
+            )}
+
             <button
                 onClick={handleOpen}
                 style={{
@@ -419,6 +505,11 @@ export default function RiskSettingsModal() {
 
                         {/* Pinned footer */}
                         <div style={{ padding: '0.9rem 1.6rem', borderTop: '1px solid rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.2)', flexShrink: 0 }}>
+                            {diffPreview.length > 0 && !validationError && (
+                                <div style={{ background: 'rgba(10,132,255,0.06)', border: '1px solid rgba(10,132,255,0.2)', borderRadius: '8px', padding: '0.45rem 0.75rem', marginBottom: '0.6rem', fontSize: '0.7rem', color: 'rgba(10,132,255,0.85)', lineHeight: 1.5 }}>
+                                    <strong>Changes:</strong> {diffPreview.join(' · ')}
+                                </div>
+                            )}
                             <div style={{ background: 'rgba(255,159,10,0.06)', border: '1px solid rgba(255,159,10,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem', marginBottom: '0.75rem', fontSize: '0.72rem', color: 'rgba(255,159,10,0.8)', lineHeight: 1.5 }}>
                                 Settings apply to all future trades. Crypto is highly volatile — never risk money you cannot afford to lose.
                             </div>

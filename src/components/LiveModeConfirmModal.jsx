@@ -1,11 +1,23 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Zap } from 'lucide-react';
 
-export default function LiveModeConfirmModal({ onConfirm, onCancel }) {
+const DEFAULT_RISK = { maxTradePercent: 2, stopLossPercent: 3, takeProfitPercent: 6, dailyLossLimitPercent: 5 };
+
+function isOnDefaults(rs) {
+    if (!rs) return true;
+    return rs.maxTradePercent === DEFAULT_RISK.maxTradePercent &&
+        rs.stopLossPercent === DEFAULT_RISK.stopLossPercent &&
+        rs.takeProfitPercent === DEFAULT_RISK.takeProfitPercent &&
+        rs.dailyLossLimitPercent === DEFAULT_RISK.dailyLossLimitPercent;
+}
+
+export default function LiveModeConfirmModal({ onConfirm, onCancel, riskSettings }) {
     const [check1, setCheck1] = useState(false);
     const [check2, setCheck2] = useState(false);
+    const [check3, setCheck3] = useState(false);
 
-    const canConfirm = check1 && check2;
+    const onDefaults = isOnDefaults(riskSettings);
+    const canConfirm = check1 && check2 && (!onDefaults || check3);
 
     return (
         <div style={{
@@ -49,6 +61,12 @@ export default function LiveModeConfirmModal({ onConfirm, onCancel }) {
                     </p>
                 </div>
 
+                {onDefaults && (
+                    <div style={{ background: 'rgba(255,69,58,0.08)', border: '1px solid rgba(255,69,58,0.3)', borderRadius: '8px', padding: '0.65rem 0.85rem', marginBottom: '1rem', fontSize: '0.78rem', color: 'var(--accent-red)', lineHeight: 1.5 }}>
+                        ⚠ Your risk settings are still at factory defaults. We strongly recommend opening <strong>Risk Settings ⚙</strong> and customising your stop-loss, take-profit, and daily loss limit before trading with real money.
+                    </div>
+                )}
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
                     <label style={{
                         display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
@@ -76,6 +94,20 @@ export default function LiveModeConfirmModal({ onConfirm, onCancel }) {
                         I have reviewed and configured my <strong style={{ color: 'var(--text-primary)' }}>&nbsp;risk limits&nbsp;</strong>
                         (per-trade %, daily loss limit, stop-loss) and the kill switch is accessible.
                     </label>
+                    {onDefaults && (
+                        <label style={{
+                            display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+                            cursor: 'pointer', color: 'rgba(255,69,58,0.85)', fontSize: '0.85rem'
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={check3}
+                                onChange={e => setCheck3(e.target.checked)}
+                                style={{ marginTop: '2px', accentColor: '#FF453A', flexShrink: 0 }}
+                            />
+                            I acknowledge my risk settings are at defaults and I accept any losses that may result.
+                        </label>
+                    )}
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.75rem' }}>

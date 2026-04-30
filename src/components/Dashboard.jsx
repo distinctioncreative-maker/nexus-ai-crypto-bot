@@ -182,9 +182,20 @@ export default function Dashboard() {
             const coordinate = candleSeries.priceToCoordinate(close);
             const isUp = close >= open;
 
+            const TOOLTIP_W = 110;
+            const TOOLTIP_H = 100;
+            const chartW = chartContainerRef.current.clientWidth;
+            const top = coordinate || 0;
+            // Flip below if near top; clamp horizontally so tooltip stays in bounds
+            const flipDown = top < TOOLTIP_H + 10;
+            const clampedLeft = Math.min(Math.max(param.point.x, TOOLTIP_W / 2), chartW - TOOLTIP_W / 2);
+
             tooltipRef.current.style.display = 'block';
-            tooltipRef.current.style.left = param.point.x + 'px';
-            tooltipRef.current.style.top = (coordinate || 0) + 'px';
+            tooltipRef.current.style.left = clampedLeft + 'px';
+            tooltipRef.current.style.top = top + 'px';
+            tooltipRef.current.style.transform = flipDown
+                ? 'translate(-50%, 10px)'
+                : 'translate(-50%, -120%)';
 
             const dateStr = new Date(param.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const fmt = (v) => v != null ? `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
@@ -644,7 +655,7 @@ export default function Dashboard() {
                             zIndex: 10,
                             transform: 'translate(-50%, -120%)',
                             boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                            minWidth: '80px',
+                            minWidth: '110px',
                             textAlign: 'center'
                         }}
                     />

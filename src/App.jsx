@@ -40,39 +40,57 @@ function App() {
   const [showReconfigure, setShowReconfigure] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
+  const [sessionWarning, setSessionWarning] = useState(false);
+  const sessionWarnTimerRef = React.useRef(null);
 
   // Listen for Supabase auth state changes
   useEffect(() => {
-    // Check existing session
+    const scheduleSessionWarning = (session) => {
+      clearTimeout(sessionWarnTimerRef.current);
+      setSessionWarning(false);
+      if (!session?.expires_at) return;
+      const expiresMs = session.expires_at * 1000;
+      const warnAt = expiresMs - 5 * 60 * 1000; // 5 min before
+      const delay = warnAt - Date.now();
+      if (delay > 0) {
+        sessionWarnTimerRef.current = setTimeout(() => setSessionWarning(true), delay);
+      }
+    };
+
     const checkSession = async () => {
       if (supabase) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           setUser(session.user);
+          scheduleSessionWarning(session);
         }
       } else {
-        // Local dev mode — auto-login
         setUser({ id: 'local-dev-user', email: 'dev@local' });
       }
       setAuthLoading(false);
     };
     checkSession();
 
-    // Subscribe to auth events
     if (supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         setUser(session?.user || null);
         if (!session) {
           setIsConfigured(false);
           closeWebSocket();
+          setSessionWarning(false);
+          clearTimeout(sessionWarnTimerRef.current);
         }
-        // Reconnect WebSocket with fresh token when Supabase silently refreshes the JWT
         if (event === 'TOKEN_REFRESHED' && session) {
+          scheduleSessionWarning(session);
+          setSessionWarning(false);
           closeWebSocket();
           initWebSocket();
         }
       });
-      return () => subscription.unsubscribe();
+      return () => {
+        subscription.unsubscribe();
+        clearTimeout(sessionWarnTimerRef.current);
+      };
     }
   }, [setIsConfigured]);
 
@@ -208,6 +226,18 @@ function App() {
           </div>
         </nav>
 
+        {sessionWarning && (
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 900,
+            background: 'rgba(255,159,10,0.12)', borderBottom: '1px solid rgba(255,159,10,0.3)',
+            padding: '0.4rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            fontSize: '0.78rem', color: 'var(--accent-orange)',
+          }}>
+            <span>⚠ Session expires in ~5 minutes. <strong>Save any open settings</strong> before your session refreshes.</span>
+            <button onClick={() => setSessionWarning(false)} style={{ background: 'none', border: 'none', color: 'var(--accent-orange)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+          </div>
+        )}
+
         <div className="app-layout" onClick={() => setMobileMenuOpen(false)}>
           <nav className="app-navigation" onClick={() => setMoreDrawerOpen(false)}>
             <NavLink to="/" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} end>
@@ -293,6 +323,7 @@ function App() {
 
       {showLiveConfirm && (
         <LiveModeConfirmModal
+            riskSettings={useStore.getState().riskSettings}
             onConfirm={() => {
             updateEngineStatus('LIVE_RUNNING');
             setShowLiveConfirm(false);
