@@ -423,7 +423,7 @@ export default function AgentsPage() {
           )}
 
           {/* Agent cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.85rem' }}>
+          <div className="strategy-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.85rem' }}>
             {strategies.map(strategy => (
               <StrategyCard
                 key={strategy.id}

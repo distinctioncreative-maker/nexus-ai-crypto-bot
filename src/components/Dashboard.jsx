@@ -550,6 +550,7 @@ export default function Dashboard() {
                                     fontFamily: 'var(--font-mono)',
                                     cursor: 'pointer',
                                     minWidth: '110px',
+                                    minHeight: 44,
                                 }}
                             >
                                 {activeProduct.base} / USD
