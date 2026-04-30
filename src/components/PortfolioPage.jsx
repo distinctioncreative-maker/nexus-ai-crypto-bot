@@ -260,7 +260,7 @@ export default function PortfolioPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
 
             {/* Top row metrics */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem' }}>
+            <div className="portfolio-metrics-top" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem' }}>
 
                 {/* Total value + equity sparkline */}
                 <div className="glass-panel" style={{ padding: '1.25rem', gridColumn: 'span 2' }}>

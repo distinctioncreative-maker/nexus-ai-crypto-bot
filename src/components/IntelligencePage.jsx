@@ -359,7 +359,7 @@ export default function IntelligencePage() {
           </div>
 
           {/* Source Filters (derived from real data) */}
-          <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}>
+          <div className="news-filter-pills" style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}>
             {sources.map(f => (
               <button
                 key={f}

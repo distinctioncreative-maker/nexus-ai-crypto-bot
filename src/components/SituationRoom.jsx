@@ -261,7 +261,7 @@ export default function SituationRoom() {
 
             {/* Starter prompts — only when no conversation yet */}
             {messages.length <= 1 && !loading && (
-                <div style={{ padding: '0 1.1rem 0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                <div className="starter-prompt-chips" style={{ padding: '0 1.1rem 0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                     {STARTER_PROMPTS.map(p => (
                         <button
                             key={p}

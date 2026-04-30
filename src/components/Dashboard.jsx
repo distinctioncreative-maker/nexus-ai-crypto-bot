@@ -273,7 +273,7 @@ export default function Dashboard() {
                 </div>
                 <button
                     onClick={() => setMobileWatchlistOpen(true)}
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'var(--text-secondary)', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', cursor: 'pointer', minHeight: 36 }}
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'var(--text-secondary)', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', cursor: 'pointer', minHeight: 44 }}
                 >
                     <List size={14} /> Watchlist
                 </button>
@@ -597,7 +597,7 @@ export default function Dashboard() {
 
                 {/* Watchlist quick-switch tab pills */}
                 {watchlist.length > 0 && (
-                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+                    <div className="watchlist-pills" style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
                         {watchlist.map(pid => {
                             const base = pid.split('-')[0];
                             const isActive = pid === selectedProduct;
@@ -606,7 +606,8 @@ export default function Dashboard() {
                                     key={pid}
                                     onClick={() => handleProductChange(pid)}
                                     style={{
-                                        padding: '0.25rem 0.65rem',
+                                        padding: '0.5rem 0.8rem',
+                                        minHeight: 44,
                                         fontSize: '0.72rem',
                                         fontFamily: 'var(--font-mono)',
                                         fontWeight: isActive ? 700 : 500,

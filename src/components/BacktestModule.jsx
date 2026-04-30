@@ -183,7 +183,7 @@ export default function BacktestModule() {
               Walk-forward: 80% train / 20% unseen test data. Fees: 0.6% taker. Slippage: 0.1%. No look-ahead bias.
             </div>
 
-            <button onClick={runBacktest} disabled={isRunning} style={{
+            <button onClick={runBacktest} disabled={isRunning} className="run-backtest-btn" style={{
               marginTop: 'auto',
               background: isRunning ? 'rgba(255,255,255,0.04)' : 'var(--accent-blue)',
               color: isRunning ? 'var(--text-secondary)' : 'white',

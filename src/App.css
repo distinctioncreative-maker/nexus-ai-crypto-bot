@@ -703,6 +703,74 @@
     .portfolio-main-grid [style*="0.6rem"]  { font-size: 0.72rem !important; }
     .portfolio-main-grid [style*="0.62rem"] { font-size: 0.72rem !important; }
     .portfolio-main-grid [style*="0.58rem"] { font-size: 0.7rem !important; }
+
+    /* ── Portfolio top metrics grid: stack properly ─────────────────────── */
+    /* On mobile the 4-col grid crushes to ~82px per column causing text   */
+    /* overflow and panel overlap. Fix: 2 cols, Total takes full row.       */
+    .portfolio-metrics-top {
+        grid-template-columns: 1fr 1fr !important;
+    }
+    .portfolio-metrics-top > *:first-child {
+        grid-column: 1 / -1 !important;       /* Total Portfolio: full width */
+    }
+    /* Scale down the huge balance number so it fits on 1 line */
+    .portfolio-metrics-top > *:first-child [style*="2.1rem"] {
+        font-size: 1.7rem !important;
+    }
+
+    /* ── Metric cards swipe indicator ───────────────────────────────────── */
+    .metrics-container::after {
+        content: '';
+        display: block;
+        flex: 0 0 1px;   /* spacer so last card shows its right edge */
+    }
+
+    /* ── Touch targets: raise all 36px interactive elements to 44px ──── */
+    /* Mobile engine bar watchlist button */
+    .mobile-engine-bar button:not(.mobile-engine-btn) {
+        min-height: 44px !important;
+    }
+
+    /* Coin filter pills (watchlist pills on dashboard) */
+    .watchlist-pills button {
+        min-height: 44px !important;
+        padding-top: 0.55rem !important;
+        padding-bottom: 0.55rem !important;
+    }
+
+    /* Starter prompt chips in Ask AI */
+    .starter-prompt-chips button {
+        min-height: 44px !important;
+        padding-top: 0.5rem !important;
+        padding-bottom: 0.5rem !important;
+    }
+
+    /* News source filter pills */
+    .news-filter-pills button {
+        min-height: 44px !important;
+    }
+
+    /* Run Backtest button */
+    .run-backtest-btn {
+        min-height: 44px !important;
+    }
+
+    /* ── Consistent bottom padding so content never hides behind nav ──── */
+    .main-content-area {
+        padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
+    }
+
+    /* ── Metric cards: show 1.2 cards to telegraph scrollability ──────── */
+    .metric-card {
+        flex: 0 0 80% !important;
+        max-width: 80%;
+    }
+
+    /* ── Strategies agent cards: 1-per-row with padding ───────────────── */
+    .strategy-cards {
+        grid-template-columns: 1fr !important;
+        gap: 0.75rem !important;
+    }
 }
 
 /* Landscape on small screens — hide bottom nav, compress chart */
