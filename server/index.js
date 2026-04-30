@@ -1,4 +1,15 @@
 require('dotenv').config();
+
+// Catch unhandled rejections so Railway doesn't silently swallow crashes
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ Unhandled Promise Rejection:', reason?.message || reason);
+    // Don't exit — keep the server running and log the issue
+});
+process.on('uncaughtException', (err) => {
+    console.error('💥 Uncaught Exception:', err.message, err.stack);
+    process.exit(1); // exit so Railway restarts the container
+});
+
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
@@ -288,7 +299,11 @@ wss.on('connection', async (ws, req) => {
 });
 
 const PORT = process.env.PORT || 3001;
-const HOST = process.env.HOST || (process.env.RAILWAY_ENVIRONMENT ? '0.0.0.0' : '127.0.0.1');
+// Always bind 0.0.0.0 in any deployed environment (Railway, Render, Heroku etc.)
+// Only restrict to 127.0.0.1 in pure local dev with no PORT env var
+const HOST = (process.env.PORT || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production')
+    ? '0.0.0.0'
+    : '127.0.0.1';
 server.listen(PORT, HOST, () => {
     console.log(`🚀 Quant by Distinction Creative — Backend running at http://${HOST}:${PORT}`);
 });
