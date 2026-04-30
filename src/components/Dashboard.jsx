@@ -253,6 +253,17 @@ export default function Dashboard() {
 
     return (
         <motion.div initial="hidden" animate="visible" variants={containerVariants}>
+            {/* Hero balance — visible only on mobile via CSS */}
+            <div className="hero-balance">
+                <div className="hero-balance__label">{isLiveMode ? 'Live Balance' : 'Paper Balance'}</div>
+                <div className="hero-balance__value">
+                    ${totalPortfolioValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="hero-balance__pnl" style={{ color: totalPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                    {totalPnl >= 0 ? '+' : ''}{totalPnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)
+                </div>
+            </div>
+
             {/* Metrics Row */}
             <motion.div className="metrics-container" variants={itemVariants}>
                 <div className="glass-panel metric-card">

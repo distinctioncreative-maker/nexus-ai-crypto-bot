@@ -156,10 +156,11 @@ export default function RiskSettingsModal() {
 
             {open && (
                 <div
+                    className="risk-modal-overlay"
                     style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     onClick={e => { if (e.target === e.currentTarget) setOpen(false); }}
                 >
-                    <div style={{
+                    <div className="risk-modal-sheet" style={{
                         background: 'var(--bg-card)',
                         border: '1px solid rgba(255,255,255,0.12)',
                         borderRadius: '18px',
@@ -173,6 +174,8 @@ export default function RiskSettingsModal() {
                     }}>
                         {/* Header */}
                         <div style={{ padding: '1.4rem 1.6rem 0', flexShrink: 0 }}>
+                        {/* Drag handle — visible on mobile bottom sheet */}
+                        <div className="risk-modal-drag-handle" />
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
                                 <h3 style={{ color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, fontSize: '1rem' }}>
                                     <Settings size={17} color="var(--accent-blue)" /> Risk Settings

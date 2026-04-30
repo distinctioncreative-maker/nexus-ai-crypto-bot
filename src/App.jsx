@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { Bot, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Cpu, Radio, KeyRound, Menu, X, ShieldAlert } from 'lucide-react';
+import { Bot, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Cpu, Radio, KeyRound, Menu, X, ShieldAlert, MoreHorizontal } from 'lucide-react';
 import { useStore } from './store/useStore';
 import { initWebSocket, closeWebSocket, sendTradingModeChange, sendEngineStatusChange } from './services/websocket';
 import { supabase, authFetch } from './lib/supabase';
@@ -39,6 +39,7 @@ function App() {
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
   const [showReconfigure, setShowReconfigure] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
 
   // Listen for Supabase auth state changes
   useEffect(() => {
@@ -193,29 +194,66 @@ function App() {
         </nav>
 
         <div className="app-layout" onClick={() => setMobileMenuOpen(false)}>
-          <nav className="app-navigation">
+          <nav className="app-navigation" onClick={() => setMoreDrawerOpen(false)}>
             <NavLink to="/" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} end>
               <LayoutDashboard size={22}/> <span className="nav-label">Trading</span>
             </NavLink>
             <NavLink to="/portfolio" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
               <Briefcase size={22}/> <span className="nav-label">Portfolio</span>
             </NavLink>
-            <NavLink to="/intelligence" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
-              <BrainCircuit size={22}/> <span className="nav-label">Market Intel</span>
-            </NavLink>
             <NavLink to="/agents" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
               <Activity size={22}/> <span className="nav-label">Strategies</span>
-            </NavLink>
-            <NavLink to="/backtest" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
-              <Binary size={22}/> <span className="nav-label">Backtest</span>
             </NavLink>
             <NavLink to="/situation-room" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
               <Radio size={22}/> <span className="nav-label">Ask AI</span>
             </NavLink>
-            <NavLink to="/changelog" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`}>
+
+            {/* Secondary nav — visible on desktop, hidden on mobile (shown in More drawer) */}
+            <NavLink to="/intelligence" className={({isActive}) => `nav-btn nav-secondary ${isActive ? 'active' : ''}`}>
+              <BrainCircuit size={22}/> <span className="nav-label">Market Intel</span>
+            </NavLink>
+            <NavLink to="/backtest" className={({isActive}) => `nav-btn nav-secondary ${isActive ? 'active' : ''}`}>
+              <Binary size={22}/> <span className="nav-label">Backtest</span>
+            </NavLink>
+            <NavLink to="/changelog" className={({isActive}) => `nav-btn nav-secondary ${isActive ? 'active' : ''}`}>
               <BookOpen size={22}/> <span className="nav-label">Guide</span>
             </NavLink>
+
+            {/* More button — only visible on mobile */}
+            <button
+              className="nav-btn nav-more-btn"
+              onClick={e => { e.stopPropagation(); setMoreDrawerOpen(v => !v); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: moreDrawerOpen ? 'var(--accent-blue)' : 'var(--text-secondary)' }}
+            >
+              <MoreHorizontal size={22}/>
+              <span className="nav-label">More</span>
+            </button>
           </nav>
+
+          {/* More drawer — slides up on mobile with secondary nav items */}
+          {moreDrawerOpen && (
+            <>
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 499 }}
+                onClick={() => setMoreDrawerOpen(false)}
+              />
+              <div className="nav-more-drawer">
+                <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)', margin: '0 auto 1rem' }} />
+                <NavLink to="/intelligence" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} onClick={() => setMoreDrawerOpen(false)}
+                  style={{ flexDirection: 'row', gap: '0.75rem', padding: '0.75rem', borderRadius: 12 }}>
+                  <BrainCircuit size={20}/> <span>Market Intel</span>
+                </NavLink>
+                <NavLink to="/backtest" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} onClick={() => setMoreDrawerOpen(false)}
+                  style={{ flexDirection: 'row', gap: '0.75rem', padding: '0.75rem', borderRadius: 12 }}>
+                  <Binary size={20}/> <span>Backtest</span>
+                </NavLink>
+                <NavLink to="/changelog" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} onClick={() => setMoreDrawerOpen(false)}
+                  style={{ flexDirection: 'row', gap: '0.75rem', padding: '0.75rem', borderRadius: 12 }}>
+                  <BookOpen size={20}/> <span>Guide</span>
+                </NavLink>
+              </div>
+            </>
+          )}
 
           <main className="main-content-area">
             <PendingTradeCard />

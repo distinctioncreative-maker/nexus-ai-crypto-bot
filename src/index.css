@@ -198,3 +198,55 @@ body {
 
 button { cursor: pointer; font-family: var(--font-ui); }
 a { text-decoration: none; color: inherit; }
+
+/* Press feedback — fintech micro-interaction on all tappable elements */
+button:active:not(:disabled) {
+    transform: scale(0.96);
+    transition: transform 0.08s ease;
+}
+.nav-btn:active {
+    transform: scale(0.92);
+    transition: transform 0.08s ease;
+}
+
+/* Bottom sheet drag handle — hidden by default, shown on mobile via App.css */
+.risk-modal-drag-handle {
+    display: none;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.2);
+    margin: 0 auto 1rem;
+    flex-shrink: 0;
+}
+
+/* Hero balance — hidden by default, shown on mobile via App.css */
+.hero-balance {
+    display: none;
+    padding: 1.25rem 0 0.5rem;
+    text-align: center;
+}
+.hero-balance__label {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.35rem;
+}
+.hero-balance__value {
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+    line-height: 1;
+}
+.hero-balance__pnl {
+    font-size: 0.85rem;
+    margin-top: 0.4rem;
+    font-weight: 500;
+}
+
+/* More button — hidden by default, shown on mobile */
+.nav-more-btn {
+    display: none;
+}

@@ -506,4 +506,76 @@
     .trade-item {
         padding: 1rem 0; /* Increase touch height */
     }
+
+    /* Hide watchlist sidebar — not usable at mobile widths */
+    .watchlist-sidebar {
+        display: none !important;
+    }
+
+    /* Hide secondary nav items — shown in "More" drawer instead */
+    .nav-secondary {
+        display: none;
+    }
+
+    /* More button — visible only on mobile */
+    .nav-more-btn {
+        display: flex;
+    }
+
+    /* More drawer overlay */
+    .nav-more-drawer {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 500;
+        flex-direction: column;
+        background: rgba(12, 12, 16, 0.98);
+        border-top: 1px solid rgba(255,255,255,0.1);
+        border-radius: 20px 20px 0 0;
+        padding: 0.75rem 1rem calc(80px + env(safe-area-inset-bottom));
+        animation: slideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    /* Risk settings modal → bottom sheet on mobile */
+    .risk-modal-overlay {
+        align-items: flex-end !important;
+    }
+    .risk-modal-sheet {
+        border-radius: 20px 20px 0 0 !important;
+        max-height: 88vh !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .risk-modal-drag-handle {
+        display: block;
+    }
+
+    /* Hero balance — prominent on mobile */
+    .hero-balance {
+        display: block;
+    }
+    .metrics-container {
+        margin-top: 0;
+    }
+}
+
+/* Landscape on small screens — hide bottom nav, compress chart */
+@media (max-width: 900px) and (orientation: landscape) {
+    .app-navigation {
+        display: none;
+    }
+    .main-content-area {
+        padding-bottom: 1rem;
+    }
+    .chart-container {
+        height: 200px !important;
+    }
+}
+
+@keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
 }

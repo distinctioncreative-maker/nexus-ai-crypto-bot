@@ -50,7 +50,7 @@ export default function WatchlistSidebar() {
     };
 
     return (
-        <div style={{
+        <div className="watchlist-sidebar" style={{
             width: '188px',
             flexShrink: 0,
             display: 'flex',
