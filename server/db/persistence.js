@@ -60,18 +60,18 @@ async function loadUserState(supabase, userId) {
         // Previous reconciliation logic was incorrect because trade history spans
         // multiple server restart cycles (each starting at $100k), so recomputing
         // balance from raw trade history produces deeply negative impossible values.
-        let balance = Math.max(0, parseFloat(settings.balance) || 100000);
+        const rawBalance = parseFloat(settings.balance);
+        let balance = !isNaN(rawBalance) && rawBalance >= 0 ? rawBalance : 100000;
         const productHoldings = settings.product_holdings || {};
 
-        // Sanity check: detect impossible state (negative balance or holdings implying
-        // portfolio > $2M — impossible with $100k starting capital without huge leverage).
+        // Sanity check: detect impossible state — negative stored balance or holdings
+        // implying portfolio > $500k (impossible from $100k starting capital legitimately).
         const holdingsEstimate = Object.values(productHoldings).reduce((sum, h) => {
             if (!h || !h.assetHoldings || !h._lastPrice) return sum;
             return sum + (h.assetHoldings * h._lastPrice);
         }, 0);
         const portfolioEstimate = balance + holdingsEstimate;
-        // Also flag negative balance as corrupted — impossible in paper trading
-        const isCorrupted = balance < -100 || portfolioEstimate > 500_000 || portfolioEstimate < -1000;
+        const isCorrupted = (!isNaN(rawBalance) && rawBalance < -100) || portfolioEstimate > 500_000;
 
         if (isCorrupted) {
             console.warn(`⚠️ Corrupted portfolio state detected for user ${userId} (est. $${portfolioEstimate.toFixed(0)}) — auto-resetting to $100k`);
