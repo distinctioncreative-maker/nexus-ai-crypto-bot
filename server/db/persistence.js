@@ -53,17 +53,60 @@ async function loadUserState(supabase, userId) {
             console.error('Key decryption failed for user', userId, e.message);
         }
 
-        // Rebuild per-product holdings from trade history
-        const productHoldings = settings.product_holdings || {};
+        // Recompute per-product holdings from trade history to guard against stale DB snapshots.
+        // If the saved snapshot disagrees with trade history by more than a tiny rounding error,
+        // trust the trade history (it's the ground truth).
+        const savedHoldings = settings.product_holdings || {};
+        const normalizedTrades = (trades || []).map(normalizeTradeRow);
+        const computedHoldings = {};
+        for (const t of [...normalizedTrades].reverse()) { // oldest first
+            const pid = t.product || 'BTC-USD';
+            if (!computedHoldings[pid]) computedHoldings[pid] = 0;
+            if (t.type === 'BUY')  computedHoldings[pid] += t.amount;
+            if (t.type === 'SELL') computedHoldings[pid] = Math.max(0, computedHoldings[pid] - t.amount);
+        }
+        // Merge: prefer computed for products we have trade history for; keep saved for the rest
+        const productHoldings = { ...savedHoldings };
+        for (const [pid, computedQty] of Object.entries(computedHoldings)) {
+            const savedQty = savedHoldings[pid]?.assetHoldings ?? 0;
+            if (Math.abs(computedQty - savedQty) > 0.000001) {
+                // Discrepancy — trust computed from trade history
+                productHoldings[pid] = {
+                    ...(savedHoldings[pid] || {}),
+                    assetHoldings: computedQty
+                };
+            }
+        }
+
+        // Recompute balance from trade history as a cross-check.
+        // If stored balance differs significantly from what the trades imply, use the computed value.
+        const PAPER_FRICTION_APPROX = 0.007; // ~0.7% per side (fee + slippage)
+        let computedBalance = 100000;
+        for (const t of [...normalizedTrades].reverse()) {
+            const cost = t.amount * t.price;
+            if (t.type === 'BUY')  computedBalance -= cost * (1 + PAPER_FRICTION_APPROX);
+            if (t.type === 'SELL') computedBalance += cost * (1 - PAPER_FRICTION_APPROX);
+        }
+        const storedBalance = parseFloat(settings.balance) || 100000;
+        // Use computed balance if stored is more than $500 off AND trade history is long enough
+        const balance = (normalizedTrades.length >= 10 && Math.abs(computedBalance - storedBalance) > 500)
+            ? computedBalance
+            : storedBalance;
+
+        // Recompute assetHoldings for the selected product from productHoldings
+        const selectedProduct = settings.selected_product || 'BTC-USD';
+        const assetHoldings = productHoldings[selectedProduct]?.assetHoldings
+            ?? parseFloat(settings.asset_holdings)
+            ?? 0;
 
         return {
             keys: {
                 coinbaseApiKey: cbKey,
                 coinbaseApiSecret: cbSecret,
             },
-            balance: parseFloat(settings.balance) || 100000,
-            assetHoldings: parseFloat(settings.asset_holdings) || 0,
-            selectedProduct: settings.selected_product || 'BTC-USD',
+            balance,
+            assetHoldings,
+            selectedProduct,
             tradingMode: settings.trading_mode || 'FULL_AUTO',
             engineStatus: settings.engine_status || (settings.is_live_mode ? 'LIVE_RUNNING' : 'STOPPED'),
             isLiveMode: settings.is_live_mode || false,
