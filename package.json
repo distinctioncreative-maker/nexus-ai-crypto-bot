@@ -11,6 +11,7 @@
     "dev:server": "npm --prefix server run dev",
     "build": "vite build",
     "start": "npx serve dist -s -l $PORT",
+    "postinstall": "npm --prefix server install --omit=dev",
     "lint": "eslint .",
     "preview": "vite preview"
   },
