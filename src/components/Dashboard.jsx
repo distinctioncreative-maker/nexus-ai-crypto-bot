@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown, Search, Play, Square } from 'lucide-react';
+import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown, Search, Play, Square, List, X as XIcon } from 'lucide-react';
 import { createChart, ColorType, CandlestickSeries } from 'lightweight-charts';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
@@ -105,6 +105,7 @@ export default function Dashboard() {
     // Searchable product dropdown state
     const [productSearch, setProductSearch] = useState('');
     const [showProductDropdown, setShowProductDropdown] = useState(false);
+    const [mobileWatchlistOpen, setMobileWatchlistOpen] = useState(false);
     const filteredProducts = useMemo(() => {
         if (!productSearch) return productList.slice(0, 50);
         const q = productSearch.toUpperCase();
@@ -260,6 +261,12 @@ export default function Dashboard() {
                     <span>{engineStatus === 'PAPER_RUNNING' ? 'Paper Trading' : engineStatus === 'LIVE_RUNNING' ? 'Live Trading' : 'Engine Stopped'}</span>
                 </div>
                 <button
+                    onClick={() => setMobileWatchlistOpen(true)}
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'var(--text-secondary)', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', cursor: 'pointer', minHeight: 36 }}
+                >
+                    <List size={14} /> Watchlist
+                </button>
+                <button
                     className={`mobile-engine-btn ${engineStatus !== 'STOPPED' ? 'running' : ''}`}
                     onClick={() => sendEngineStatusChange(engineStatus !== 'STOPPED' ? 'STOPPED' : 'PAPER_RUNNING')}
                 >
@@ -269,6 +276,28 @@ export default function Dashboard() {
                     }
                 </button>
             </div>
+
+            {/* Mobile watchlist bottom sheet */}
+            {mobileWatchlistOpen && (
+                <div
+                    style={{ position: 'fixed', inset: 0, zIndex: 8500, background: 'rgba(0,0,0,0.6)' }}
+                    onClick={() => setMobileWatchlistOpen(false)}
+                >
+                    <div
+                        className="mobile-watchlist-sheet"
+                        style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '20px 20px 0 0', padding: '1rem 1rem calc(1rem + env(safe-area-inset-bottom))', maxHeight: '75vh', overflowY: 'auto' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                            <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>Watchlist</span>
+                            <button onClick={() => setMobileWatchlistOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.25rem' }}>
+                                <XIcon size={18} />
+                            </button>
+                        </div>
+                        <WatchlistSidebar />
+                    </div>
+                </div>
+            )}
 
             {/* Hero balance — visible only on mobile via CSS */}
             <div className="hero-balance">

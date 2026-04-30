@@ -1,10 +1,14 @@
-import React from 'react';
-import { Play, Square, FlaskConical, Zap, Lock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, Square, FlaskConical, Zap, Lock, Loader } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { sendEngineStatusChange, sendTradingModeChange } from '../services/websocket';
 
 export default function EngineControl({ onLiveRequest }) {
     const { engineStatus, tradingMode, hasCoinbaseKeys } = useStore();
+    const [transitioning, setTransitioning] = useState(false);
+
+    // Clear transitioning state once the server confirms the new engine status
+    useEffect(() => { setTransitioning(false); }, [engineStatus]);
 
     const isRunning = engineStatus !== 'STOPPED';
     const isPaper   = engineStatus === 'PAPER_RUNNING';
@@ -23,16 +27,20 @@ export default function EngineControl({ onLiveRequest }) {
     };
 
     const handleStartStop = () => {
+        if (transitioning) return;
+        setTransitioning(true);
         if (isRunning) {
             sendEngineStatusChange('STOPPED');
         } else {
-            // Start in LIVE or PAPER depending on which pill is active
             if (selectedMode === 'LIVE') {
+                setTransitioning(false); // modal takes over, no WS call yet
                 onLiveRequest?.();
             } else {
                 sendEngineStatusChange('PAPER_RUNNING');
             }
         }
+        // Safety: clear transitioning after 4s if server doesn't respond
+        setTimeout(() => setTransitioning(false), 4000);
     };
 
     const handleTradingModeToggle = () => {
@@ -104,30 +112,37 @@ export default function EngineControl({ onLiveRequest }) {
             {/* START / STOP button */}
             <button
                 onClick={handleStartStop}
-                title={isRunning ? 'Stop the AI trading engine' : 'Start the AI trading engine in Paper mode'}
+                disabled={transitioning}
+                title={transitioning ? 'Please wait…' : isRunning ? 'Stop the AI trading engine' : 'Start the AI trading engine in Paper mode'}
                 style={{
                     display: 'flex', alignItems: 'center', gap: '0.4rem',
                     padding: '0.35rem 0.9rem',
                     borderRadius: 'var(--radius-md, 10px)',
-                    border: isRunning
-                        ? '1px solid rgba(48,209,88,0.4)'
-                        : '1px solid rgba(255,255,255,0.15)',
-                    background: isRunning
-                        ? 'rgba(48,209,88,0.12)'
-                        : 'rgba(255,255,255,0.07)',
-                    color: isRunning ? 'var(--accent-green)' : 'var(--text-primary)',
-                    cursor: 'pointer',
+                    border: transitioning
+                        ? '1px solid rgba(255,159,10,0.35)'
+                        : isRunning
+                            ? '1px solid rgba(48,209,88,0.4)'
+                            : '1px solid rgba(255,255,255,0.15)',
+                    background: transitioning
+                        ? 'rgba(255,159,10,0.08)'
+                        : isRunning
+                            ? 'rgba(48,209,88,0.12)'
+                            : 'rgba(255,255,255,0.07)',
+                    color: transitioning ? 'var(--accent-orange)' : isRunning ? 'var(--accent-green)' : 'var(--text-primary)',
+                    cursor: transitioning ? 'not-allowed' : 'pointer',
                     fontSize: '0.75rem',
                     fontWeight: 800,
                     letterSpacing: '0.05em',
                     transition: 'all 0.2s',
-                    animation: isRunning ? 'enginePulse 2.5s ease-in-out infinite' : 'none',
-                    boxShadow: isRunning ? '0 0 12px rgba(48,209,88,0.2)' : 'none',
+                    animation: (!transitioning && isRunning) ? 'enginePulse 2.5s ease-in-out infinite' : 'none',
+                    boxShadow: (!transitioning && isRunning) ? '0 0 12px rgba(48,209,88,0.2)' : 'none',
                 }}
             >
-                {isRunning
-                    ? <><Square size={11} fill="currentColor" /> RUNNING</>
-                    : <><Play  size={11} fill="currentColor" /> START ENGINE</>
+                {transitioning
+                    ? <><Loader size={11} style={{ animation: 'spin 0.9s linear infinite' }} /> {isRunning ? 'STOPPING…' : 'STARTING…'}</>
+                    : isRunning
+                        ? <><Square size={11} fill="currentColor" /> RUNNING</>
+                        : <><Play  size={11} fill="currentColor" /> START ENGINE</>
                 }
             </button>
 
