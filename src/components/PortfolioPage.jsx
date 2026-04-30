@@ -161,25 +161,67 @@ export default function PortfolioPage() {
     const totalPnl = totalPortfolio - INITIAL_BALANCE;
     const totalPnlPct = (totalPnl / INITIAL_BALANCE) * 100;
 
-    // Equity curve: track total portfolio value (cash + holdings at trade price)
+    // Realized P&L: net proceeds from all completed sell trades vs their average cost basis
+    const realizedPnl = useMemo(() => {
+        const avgBuyPrice = {}; // productId → average buy price
+        const qtyHeld = {};     // productId → quantity held (from buys)
+        let realized = 0;
+        const chronological = [...trades].reverse();
+        for (const t of chronological) {
+            const pid = t.product || 'BTC-USD';
+            const qty = Number(t.amount) || 0;
+            const price = Number(t.price) || 0;
+            if (!qty || !price) continue;
+            if (t.type === 'BUY') {
+                const prevQty = qtyHeld[pid] || 0;
+                const prevAvg = avgBuyPrice[pid] || 0;
+                const newQty = prevQty + qty;
+                avgBuyPrice[pid] = (prevQty * prevAvg + qty * price) / newQty;
+                qtyHeld[pid] = newQty;
+            } else if (t.type === 'SELL') {
+                const costBasis = avgBuyPrice[pid] || price;
+                realized += (price - costBasis) * qty;
+                qtyHeld[pid] = Math.max(0, (qtyHeld[pid] || 0) - qty);
+            }
+        }
+        return realized;
+    }, [trades]);
+
+    // Unrealized P&L: sum of open position gains at live prices
+    const unrealizedPnl = useMemo(() =>
+        allPositions.reduce((sum, p) => {
+            if (!p.avgBuy || !p.livePrice) return sum;
+            return sum + (p.livePrice - p.avgBuy) * p.qty;
+        }, 0),
+        [allPositions]
+    );
+
+    // Equity curve: track total portfolio value (cash + holdings) per trade
+    // Fixed: use each product's own trade price as cost basis, not the current trade's price
     const equityCurve = useMemo(() => {
         const chronological = [...trades].reverse();
         let cash = INITIAL_BALANCE;
-        const holdingsMap = {};
+        const holdingsMap = {};  // productId → { qty, lastPrice }
         const points = [{ i: 0, v: INITIAL_BALANCE }];
         for (const t of chronological) {
             const amount = Number(t.amount) || 0;
             const price  = Number(t.price)  || 0;
-            if (!amount || !price) continue; // skip malformed trades
+            if (!amount || !price) continue;
             const pid = t.product || 'BTC-USD';
+            if (!holdingsMap[pid]) holdingsMap[pid] = { qty: 0, lastPrice: price };
             if (t.type === 'BUY') {
                 cash -= amount * price * 1.007;
-                holdingsMap[pid] = (holdingsMap[pid] || 0) + amount;
+                holdingsMap[pid].qty += amount;
+                holdingsMap[pid].lastPrice = price;
             } else if (t.type === 'SELL') {
                 cash += amount * price * 0.993;
-                holdingsMap[pid] = Math.max(0, (holdingsMap[pid] || 0) - amount);
+                holdingsMap[pid].qty = Math.max(0, holdingsMap[pid].qty - amount);
+                holdingsMap[pid].lastPrice = price;
             }
-            const holdingsValue = Object.entries(holdingsMap).reduce((sum, [, qty]) => sum + qty * price, 0);
+            // Value each holding at its own last known price (not the current trade's price)
+            const holdingsValue = Object.values(holdingsMap).reduce(
+                (sum, h) => sum + h.qty * h.lastPrice, 0
+            );
             const total = cash + holdingsValue;
             if (isFinite(total)) points.push({ i: points.length, v: total });
         }
@@ -229,7 +271,20 @@ export default function PortfolioPage() {
                         ${totalPortfolio.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: totalPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', marginTop: '0.25rem' }}>
-                        {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)} ({totalPnlPct.toFixed(2)}%) from ${(INITIAL_BALANCE / 1000).toFixed(0)}k start
+                        {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)} ({totalPnlPct.toFixed(2)}%) all-time since $100k
+                    </div>
+                    {/* Realized / unrealized breakdown */}
+                    <div style={{ display: 'flex', gap: '1rem', marginTop: '0.45rem' }}>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                            <span style={{ color: realizedPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                                {realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(0)}
+                            </span>{' '}realized
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                            <span style={{ color: unrealizedPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                                {unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toFixed(0)}
+                            </span>{' '}open positions
+                        </div>
                     </div>
                     {equityCurve.length > 1 && (
                         <div style={{ height: 48, marginTop: '0.85rem' }}>

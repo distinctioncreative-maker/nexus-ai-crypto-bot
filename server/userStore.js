@@ -426,6 +426,14 @@ class UserStore {
         // Persist trade to Supabase (fire-and-forget)
         getPersistence().saveTrade(getSupabase(), userId, trade).catch(error => console.warn('saveTrade failed:', error.message));
 
+        // Persist balance + holdings atomically so server restarts don't cause ghost positions
+        getPersistence().saveTradeState(
+            getSupabase(), userId,
+            user.paperTradingState.balance,
+            user.paperTradingState.assetHoldings,
+            user.productHoldings
+        ).catch(error => console.warn('saveTradeState failed:', error.message));
+
         this.addNotification(userId, {
             type: 'TRADE_EXECUTED',
             title: `${type} Executed`,

@@ -196,4 +196,24 @@ async function saveStrategies(supabase, userId, strategies) {
     }
 }
 
-module.exports = { loadUserState, saveUserSettings, saveTrade, saveLearning, saveStrategies };
+/**
+ * Persist balance + per-product holdings snapshot atomically after a trade.
+ * Lightweight upsert — only updates the fields that change on trade execution.
+ * Prevents stale balance/holdings after server restarts mid-session.
+ */
+async function saveTradeState(supabase, userId, balance, assetHoldings, productHoldings) {
+    if (!supabase) return;
+    try {
+        await supabase.from('user_settings').upsert({
+            user_id: userId,
+            balance,
+            asset_holdings: assetHoldings,
+            product_holdings: productHoldings,
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+    } catch (err) {
+        console.error('saveTradeState error:', err.message);
+    }
+}
+
+module.exports = { loadUserState, saveUserSettings, saveTrade, saveLearning, saveStrategies, saveTradeState };

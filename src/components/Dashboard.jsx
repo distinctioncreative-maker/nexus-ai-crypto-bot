@@ -343,7 +343,7 @@ export default function Dashboard() {
                 <div className="glass-panel metric-card">
                     <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {totalPnl >= 0 ? <TrendingUp size={16} color="var(--accent-green)" /> : <TrendingDown size={16} color="var(--accent-red)" />}
-                        Total P&amp;L
+                        All-time Return
                     </div>
                     <div className="metric-value" style={{
                         fontSize: '1.1rem', marginTop: '0.2rem',
@@ -353,6 +353,9 @@ export default function Dashboard() {
                         <span style={{ fontSize: '0.75rem', marginLeft: '0.4rem', opacity: 0.8 }}>
                             ({totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%)
                         </span>
+                    </div>
+                    <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                        incl. realized gains · since $100k
                     </div>
                 </div>
 
