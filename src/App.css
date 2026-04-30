@@ -669,8 +669,24 @@
     }
 
     /* ── Font size raises for mobile readability ── */
+    /* Raise all sub-11px inline text by bumping known tiny sizes globally */
     .strategy-card-stats .stat-label { font-size: 0.68rem !important; }
     .intelligence-strip .strip-label { font-size: 0.72rem !important; }
+
+    /* AgentsPage — stat labels, shadow portfolio labels, signal badges */
+    .strategy-cards [style*="0.56rem"] { font-size: 0.7rem !important; }
+    .strategy-cards [style*="0.58rem"] { font-size: 0.7rem !important; }
+    .strategy-cards [style*="0.6rem"]  { font-size: 0.72rem !important; }
+    .strategy-cards [style*="0.62rem"] { font-size: 0.72rem !important; }
+
+    /* IntelligencePage — source badges, footer timestamps, impact labels */
+    .intelligence-grid [style*="0.58rem"] { font-size: 0.7rem !important; }
+    .intelligence-grid [style*="0.6rem"]  { font-size: 0.72rem !important; }
+
+    /* Portfolio — tiny table headers and labels */
+    .portfolio-main-grid [style*="0.6rem"]  { font-size: 0.72rem !important; }
+    .portfolio-main-grid [style*="0.62rem"] { font-size: 0.72rem !important; }
+    .portfolio-main-grid [style*="0.58rem"] { font-size: 0.7rem !important; }
 }
 
 /* Landscape on small screens — hide bottom nav, compress chart */
