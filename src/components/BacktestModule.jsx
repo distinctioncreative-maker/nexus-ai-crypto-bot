@@ -145,7 +145,7 @@ export default function BacktestModule() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '270px 1fr', gap: '0.85rem' }}>
+      <div className="backtest-grid" style={{ display: 'grid', gridTemplateColumns: '270px 1fr', gap: '0.85rem' }}>
 
         {/* Config Panel */}
         <div className="glass-panel widget" style={{ gap: '0' }}>

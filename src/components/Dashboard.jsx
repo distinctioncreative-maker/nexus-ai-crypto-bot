@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown, Search, Play } from 'lucide-react';
+import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown, Search, Play, Square } from 'lucide-react';
 import { createChart, ColorType, CandlestickSeries } from 'lightweight-charts';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
-import { sendProductChange } from '../services/websocket';
+import { sendProductChange, sendEngineStatusChange } from '../services/websocket';
 import { authFetch } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
 import WatchlistSidebar from './WatchlistSidebar';
@@ -37,7 +37,7 @@ export default function Dashboard() {
         currentPrice, aiStatus, aiThesis, trades, balance, assetHoldings,
         isLiveMode, engineStatus, candleHistory, selectedProduct, watchlist,
         availableProducts, setAvailableProducts, lastTickTime,
-        productPrices, productHoldings
+        productPrices, productHoldings,
     } = useStore();
 
     // Compute total portfolio value across all held products
@@ -253,6 +253,23 @@ export default function Dashboard() {
 
     return (
         <motion.div initial="hidden" animate="visible" variants={containerVariants}>
+            {/* Mobile engine bar — replaces navbar control on phones */}
+            <div className="mobile-engine-bar">
+                <div className="mobile-engine-bar__status">
+                    <div className={`status-dot ${engineStatus !== 'STOPPED' ? 'running' : ''}`} />
+                    <span>{engineStatus === 'PAPER_RUNNING' ? 'Paper Trading' : engineStatus === 'LIVE_RUNNING' ? 'Live Trading' : 'Engine Stopped'}</span>
+                </div>
+                <button
+                    className={`mobile-engine-btn ${engineStatus !== 'STOPPED' ? 'running' : ''}`}
+                    onClick={() => sendEngineStatusChange(engineStatus !== 'STOPPED' ? 'STOPPED' : 'PAPER_RUNNING')}
+                >
+                    {engineStatus !== 'STOPPED'
+                        ? <><Square size={11} style={{ marginRight: '0.35rem' }} fill="currentColor" />Stop</>
+                        : <><Play  size={11} style={{ marginRight: '0.35rem' }} fill="currentColor" />Start Paper</>
+                    }
+                </button>
+            </div>
+
             {/* Hero balance — visible only on mobile via CSS */}
             <div className="hero-balance">
                 <div className="hero-balance__label">{isLiveMode ? 'Live Balance' : 'Paper Balance'}</div>
@@ -356,7 +373,7 @@ export default function Dashboard() {
 
             {/* Intelligence Strip */}
             {signals && (
-                <motion.div variants={itemVariants} style={{
+                <motion.div className="intelligence-strip" variants={itemVariants} style={{
                     display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap'
                 }}>
                     {signals.fearGreed && (
@@ -496,7 +513,7 @@ export default function Dashboard() {
                                 <ChevronDown size={13} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
                             </button>
                             {showProductDropdown && (
-                                <div style={{
+                                <div className="product-dropdown" style={{
                                     position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 500,
                                     background: '#0e0e12', border: '1px solid rgba(255,255,255,0.12)',
                                     borderRadius: '10px', width: '200px',

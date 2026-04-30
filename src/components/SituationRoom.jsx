@@ -135,6 +135,17 @@ export default function SituationRoom() {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
+    // iOS keyboard avoidance — scroll chat to bottom when virtual keyboard resizes viewport
+    useEffect(() => {
+        const vv = window.visualViewport;
+        if (!vv) return;
+        const handler = () => {
+            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        };
+        vv.addEventListener('resize', handler);
+        return () => vv.removeEventListener('resize', handler);
+    }, []);
+
     const buildHistory = useCallback(() => {
         return messages
             .filter(m => (m.type === 'user' || m.type === 'oracle') && m.text && !m.thinking)
@@ -190,7 +201,7 @@ export default function SituationRoom() {
     return (
         <div style={{
             display: 'flex', flexDirection: 'column',
-            height: '100%', maxHeight: 'calc(100vh - 120px)',
+            height: '100%', maxHeight: 'calc(var(--vh, 1vh) * 100 - 120px)',
             background: 'var(--bg-card)',
             borderRadius: '16px', border: '1px solid var(--card-border)',
             overflow: 'hidden',

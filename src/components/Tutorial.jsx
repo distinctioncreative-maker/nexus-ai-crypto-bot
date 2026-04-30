@@ -108,7 +108,7 @@ export default function Tutorial({ onClose }) {
       animation: 'fadeIn 0.25s ease',
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        width: '100%',
+        width: 'calc(100vw - 32px)',
         maxWidth: '520px',
         background: 'rgba(12, 12, 18, 0.98)',
         border: '1px solid rgba(255,255,255,0.08)',

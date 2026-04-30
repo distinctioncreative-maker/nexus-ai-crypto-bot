@@ -349,6 +349,26 @@
     cursor: pointer;
 }
 
+/* Mobile-only bell — hidden by default, shown on mobile */
+.navbar-mobile-bell {
+    display: none;
+}
+
+/* Mobile engine bar — hidden on desktop, shown on mobile */
+.mobile-engine-bar {
+    display: none;
+}
+
+/* Grid collapse classes — activated via mobile media query */
+.portfolio-main-grid {}
+.portfolio-donut {}
+.backtest-grid {}
+.intelligence-grid {}
+.intelligence-strip {}
+.product-dropdown {}
+.holdings-scroll-wrapper {}
+.holdings-table-header {}
+
 /* ---------------------------------------------------- */
 /* MOBILE OVERHAUL: SAFARI & iOS OPTIMIZATIONS          */
 /* ---------------------------------------------------- */
@@ -360,51 +380,27 @@
 }
 
 @media (max-width: 900px) {
+    /* ── Navbar: clean fintech style — logo + bell only ── */
     .navbar {
         height: auto;
-        min-height: 70px;
-        flex-wrap: wrap;
-        z-index: 100;
+        min-height: 56px;
+        padding: 0.6rem 1rem;
+        padding-top: max(0.6rem, env(safe-area-inset-top));
     }
 
-    .mobile-menu-btn {
-        display: block;
-    }
+    /* Hide hamburger and ALL desktop controls */
+    .mobile-menu-btn { display: none !important; }
+    .system-controls { display: none !important; }
 
-    .system-controls {
-        display: none;
-        width: 100%;
-        flex-direction: column;
-        align-items: stretch;
-        padding: 1rem 0;
-        gap: 0.75rem;
-        background: var(--bg-color-secondary);
-        border-top: 1px solid var(--card-border);
-        margin-top: 0.5rem;
-    }
-
-    .system-controls.open {
+    /* Show mobile-only bell */
+    .navbar-mobile-bell {
         display: flex;
-    }
-
-    .secure-badge {
-        justify-content: center;
-        padding: 0.5rem;
-    }
-
-    /* Mobile specific adjustments for dropdown items */
-    .mode-toggle-container {
-        display: flex;
-        justify-content: center;
-    }
-
-    .tutorial-btn {
-        margin: 0 auto;
+        align-items: center;
     }
 
     .app-layout {
-        padding: 1rem;
-        padding-top: max(1rem, env(safe-area-inset-top));
+        padding: 0.75rem;
+        padding-top: max(0.75rem, env(safe-area-inset-top));
     }
 
     .brand-name {
@@ -449,9 +445,11 @@
 
     .nav-btn {
         flex-direction: column;
-        gap: 0.25rem;
-        padding: 0.5rem;
+        gap: 0.2rem;
+        padding: 0.55rem 0.5rem;
         border-radius: 8px;
+        min-height: 52px;
+        min-width: 52px;
     }
 
     .nav-btn.active {
@@ -461,14 +459,14 @@
     }
 
     .nav-label {
-        font-size: 0.65rem;
+        font-size: 0.7rem;
         font-weight: 500;
     }
 
     /* Adjust Main Content to not overlap under bottom bar */
     .main-content-area {
-        padding: 1rem;
-        padding-bottom: calc(80px + env(safe-area-inset-bottom)); 
+        padding: 0.75rem;
+        padding-bottom: calc(80px + env(safe-area-inset-bottom));
         width: 100%;
     }
 
@@ -522,19 +520,20 @@
         display: flex;
     }
 
-    /* More drawer overlay */
+    /* More drawer overlay — sits ABOVE the tab bar */
     .nav-more-drawer {
         display: flex;
         position: fixed;
-        bottom: 0;
+        bottom: calc(62px + env(safe-area-inset-bottom));
         left: 0;
         right: 0;
         z-index: 500;
         flex-direction: column;
         background: rgba(12, 12, 16, 0.98);
-        border-top: 1px solid rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-bottom: none;
         border-radius: 20px 20px 0 0;
-        padding: 0.75rem 1rem calc(80px + env(safe-area-inset-bottom));
+        padding: 0.75rem 1rem 1rem;
         animation: slideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
     }
 
@@ -560,6 +559,118 @@
     .metrics-container {
         margin-top: 0;
     }
+
+    /* ── Mobile Engine Bar ── */
+    .mobile-engine-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        background: rgba(10,132,255,0.06);
+        border: 1px solid rgba(10,132,255,0.15);
+        border-radius: 14px;
+        margin-bottom: 0.75rem;
+    }
+    .mobile-engine-bar__status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+    }
+    .mobile-engine-bar__status .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--text-secondary);
+    }
+    .mobile-engine-bar__status .status-dot.running {
+        background: var(--accent-green);
+        box-shadow: 0 0 6px var(--accent-green);
+        animation: enginePulse 2.5s ease-in-out infinite;
+    }
+    .mobile-engine-btn {
+        padding: 0.6rem 1.25rem;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        min-height: 44px;
+        border: 1px solid rgba(10,132,255,0.35);
+        background: rgba(10,132,255,0.15);
+        color: var(--accent-blue);
+        cursor: pointer;
+        letter-spacing: 0.03em;
+    }
+    .mobile-engine-btn.running {
+        border-color: rgba(48,209,88,0.4);
+        background: rgba(48,209,88,0.1);
+        color: var(--accent-green);
+    }
+
+    /* ── Page Grid Collapses ── */
+    .portfolio-main-grid {
+        grid-template-columns: 1fr !important;
+    }
+    .portfolio-donut {
+        display: none !important;
+    }
+    .backtest-grid {
+        grid-template-columns: 1fr !important;
+        gap: 1rem;
+    }
+    .intelligence-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* ── Intelligence strip: 2×2 grid ── */
+    .intelligence-strip {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 0.5rem !important;
+    }
+
+    /* ── Agent cards: 1-column ── */
+    .strategy-cards {
+        grid-template-columns: 1fr !important;
+    }
+    .strategy-card-stats {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+
+    /* ── Product dropdown: full-width pinned above nav ── */
+    .product-dropdown {
+        position: fixed !important;
+        left: 0.75rem !important;
+        right: 0.75rem !important;
+        width: auto !important;
+        bottom: calc(70px + env(safe-area-inset-bottom) + 0.5rem) !important;
+        top: auto !important;
+        max-height: 55vh !important;
+        border-radius: 16px !important;
+        z-index: 600 !important;
+        box-shadow: 0 -8px 32px rgba(0,0,0,0.6) !important;
+    }
+
+    /* ── Holdings table ── */
+    .holdings-scroll-wrapper::after {
+        content: 'swipe to see more →';
+        display: block;
+        font-size: 0.65rem;
+        color: var(--text-secondary);
+        text-align: center;
+        padding: 0.3rem 0;
+        opacity: 0.6;
+    }
+    .holdings-table-header {
+        position: sticky;
+        top: 0;
+        background: var(--card-bg);
+        z-index: 10;
+    }
+
+    /* ── Font size raises for mobile readability ── */
+    .strategy-card-stats .stat-label { font-size: 0.68rem !important; }
+    .intelligence-strip .strip-label { font-size: 0.72rem !important; }
 }
 
 /* Landscape on small screens — hide bottom nav, compress chart */

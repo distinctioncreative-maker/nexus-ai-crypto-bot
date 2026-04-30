@@ -79,7 +79,7 @@ export default function NotificationCenter() {
                     position: 'absolute',
                     top: 'calc(100% + 8px)',
                     right: 0,
-                    width: '340px',
+                    width: `${Math.min(340, window.innerWidth - 16)}px`,
                     background: 'var(--bg-card)',
                     border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: '12px',

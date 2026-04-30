@@ -330,7 +330,7 @@ export default function IntelligencePage() {
       )}
 
       {/* Main grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '0.85rem' }}>
+      <div className="intelligence-grid" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '0.85rem' }}>
         {/* Live Feed */}
         <div className="glass-panel" style={{ padding: '1.1rem 1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>

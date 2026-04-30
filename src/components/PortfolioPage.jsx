@@ -269,10 +269,10 @@ export default function PortfolioPage() {
             </div>
 
             {/* Main grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: '0.85rem' }}>
+            <div className="portfolio-main-grid" style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: '0.85rem' }}>
 
-                {/* Allocation donut */}
-                <div className="glass-panel widget">
+                {/* Allocation donut — hidden on mobile */}
+                <div className="portfolio-donut glass-panel widget">
                     <div className="widget-header">
                         <span className="widget-title"><Wallet size={13} /> Allocation</span>
                     </div>
@@ -324,8 +324,8 @@ export default function PortfolioPage() {
                                 </span>
                             )}
                         </div>
-                        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                        <RowHeader />
+                        <div className="holdings-scroll-wrapper" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                        <div className="holdings-table-header"><RowHeader /></div>
 
                         {allPositions.length > 0 ? (
                             allPositions.map(pos => (

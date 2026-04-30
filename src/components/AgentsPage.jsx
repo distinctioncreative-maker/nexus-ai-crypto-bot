@@ -217,7 +217,7 @@ function StrategyCard({ strategy, isLeader }) {
       </div>
 
       {/* Stats grid */}
-      <div style={{
+      <div className="strategy-card-stats" style={{
         display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
         gap: '0.5rem', padding: '0.65rem',
         background: 'rgba(255,255,255,0.02)',
@@ -363,7 +363,7 @@ export default function AgentsPage() {
       {strategies.length > 0 ? (
         <>
           {/* Summary stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.65rem', marginBottom: '1rem' }}>
+          <div className="strategy-card-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.65rem', marginBottom: '1rem' }}>
             {[
               { label: 'Total Shadow Equity', value: `$${(totalEquity / 1000).toFixed(0)}k`, color: totalEquity > INITIAL_CAPITAL * strategies.length ? 'var(--accent-green)' : 'var(--accent-red)' },
               { label: 'Total Trades', value: totalTrades, color: 'var(--text-primary)' },

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { Bot, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Cpu, Radio, KeyRound, Menu, X, ShieldAlert, MoreHorizontal } from 'lucide-react';
+import { Bot, BookOpen, Activity, LayoutDashboard, BrainCircuit, Binary, Briefcase, LogOut, Radio, KeyRound, ShieldAlert, MoreHorizontal } from 'lucide-react';
 import { useStore } from './store/useStore';
 import { initWebSocket, closeWebSocket, sendTradingModeChange, sendEngineStatusChange } from './services/websocket';
 import { supabase, authFetch } from './lib/supabase';
@@ -75,6 +75,16 @@ function App() {
       return () => subscription.unsubscribe();
     }
   }, [setIsConfigured]);
+
+  // Set --vh CSS variable for iOS viewport height fix (keyboard avoidance)
+  useEffect(() => {
+    const setVh = () => {
+      document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
+    };
+    setVh();
+    window.addEventListener('resize', setVh);
+    return () => window.removeEventListener('resize', setVh);
+  }, []);
 
   // When user is authenticated, check if their keys are set up
   useEffect(() => {
@@ -156,14 +166,15 @@ function App() {
               <span className="version-tag">{user.email}</span>
             </div>
           </div>
-          
-          <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
 
-          <div className={`system-controls ${mobileMenuOpen ? 'open' : ''}`}>
+          {/* Mobile-only: just the notification bell — clean fintech navbar */}
+          <div className="navbar-mobile-bell">
+            <NotificationCenter />
+          </div>
+
+          {/* Desktop system controls */}
+          <div className="system-controls">
             <EngineControl onLiveRequest={() => setShowLiveConfirm(true)} />
-
             <KillSwitch />
             <NotificationCenter />
             <RiskSettingsModal />
@@ -174,19 +185,16 @@ function App() {
             >
               <KeyRound size={18} />
             </button>
-
             <button
               className={`tutorial-btn ${tutorialsActive ? 'active' : ''}`}
               onClick={toggleTutorials}
             >
               <BookOpen size={18} />
             </button>
-
             <div className="secure-badge">
               <ShieldAlert size={14} color="var(--accent-green)"/>
               <span>Encrypted Enclave</span>
             </div>
-
             <button className="tutorial-btn" onClick={handleSignOut} title="Sign Out">
               <LogOut size={18} />
             </button>

@@ -86,6 +86,7 @@ export default function KillSwitch() {
                         borderRadius: '16px',
                         padding: '2rem',
                         width: '420px',
+                        maxWidth: 'calc(100vw - 32px)',
                         textAlign: 'center'
                     }}>
                         <AlertTriangle size={40} color="var(--accent-red)" style={{ marginBottom: '1rem' }} />
