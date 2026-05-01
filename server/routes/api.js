@@ -298,6 +298,50 @@ router.post('/confirm-trade', authenticate, async (req, res) => {
     res.json({ success: true, executed: !!executed, trade: executed || null });
 });
 
+// Protected: manually close (sell all of) a paper position from the portfolio page
+router.post('/paper/close-position', authenticate, (req, res) => {
+    const { productId } = req.body;
+    if (!productId || typeof productId !== 'string') {
+        return res.status(400).json({ error: 'productId is required' });
+    }
+
+    const user = userStore._ensureUser(req.userId);
+
+    // Get the current holdings for this product
+    let qty = 0;
+    let currentPrice = 0;
+    if (productId === user.selectedProduct) {
+        qty = user.paperTradingState.assetHoldings;
+    } else {
+        qty = user.productHoldings[productId]?.assetHoldings ?? 0;
+    }
+
+    // Get the last known price for this product
+    currentPrice = user.productHoldings[productId]?._lastPrice ?? 0;
+    if (!currentPrice || currentPrice <= 0) {
+        return res.status(400).json({ error: `No price available for ${productId} — the market stream needs a tick first` });
+    }
+
+    if (qty <= 0.000001) {
+        return res.status(400).json({ error: `No holdings to close for ${productId}` });
+    }
+
+    const executed = userStore.executePaperTrade(
+        req.userId, 'SELL', qty, currentPrice,
+        '[MANUAL CLOSE] Position closed from Portfolio page', productId
+    );
+
+    if (!executed) {
+        return res.status(400).json({ error: 'Trade rejected — check holdings and risk settings' });
+    }
+
+    // Clean up SmartTrade position
+    const { closePosition } = require('../services/positionManager');
+    closePosition(req.userId, productId);
+
+    res.json({ success: true, trade: executed, message: `Closed ${qty.toFixed(6)} ${productId} @ $${currentPrice.toLocaleString()}` });
+});
+
 // Protected: run a backtest (proxies to backtestEngine)
 router.get('/backtest', authenticate, async (req, res) => {
     try {

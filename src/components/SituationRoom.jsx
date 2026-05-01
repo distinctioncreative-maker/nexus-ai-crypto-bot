@@ -73,7 +73,13 @@ function OracleBubble({ text, thinking, isNew }) {
                         </span>
                     ) : isOffline ? (
                         <span style={{ color: 'rgba(255,159,10,0.85)', fontSize: '0.83rem' }}>
-                            Oracle is temporarily unavailable — the AI provider is rate-limited. Wait 30 seconds and try again.
+                            {text?.includes('rate-limited') || text?.includes('quota')
+                                ? 'Oracle is rate-limited — Groq free-tier token quota exceeded. Wait 30–60 seconds and try again.'
+                                : text?.includes('authentication') || text?.includes('GROQ_API_KEY')
+                                    ? 'Oracle unavailable — AI provider authentication failed. Check GROQ_API_KEY is set on the server.'
+                                    : text?.includes('no AI provider')
+                                        ? 'Oracle unavailable — no AI provider configured on the server. Set GROQ_API_KEY to enable.'
+                                        : 'Oracle temporarily unavailable. Wait a moment and try again.'}
                         </span>
                     ) : text}
                 </div>

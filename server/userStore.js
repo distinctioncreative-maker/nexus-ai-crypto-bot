@@ -181,11 +181,16 @@ class UserStore {
     setSelectedProduct(userId, productId) {
         const user = this._ensureUser(userId);
 
-        // Save current product's state before switching
+        // Save current product's state before switching.
+        // Filter trades to this product only — user.paperTradingState.trades can contain
+        // a merged array from getPaperState() that includes trades for ALL products.
+        // Storing mixed trades here contaminates avgBuy calculations in the portfolio UI
+        // and produces impossibly large P&L percentages (e.g. +3,000,000% for BTC).
         if (user.selectedProduct) {
-            user.productHoldings[user.selectedProduct] = {
+            const curProd = user.selectedProduct;
+            user.productHoldings[curProd] = {
                 assetHoldings: user.paperTradingState.assetHoldings,
-                trades: [...user.paperTradingState.trades]
+                trades: user.paperTradingState.trades.filter(t => t.product === curProd)
             };
         }
 
@@ -454,11 +459,13 @@ class UserStore {
             };
         }
 
-        // Sync per-product holdings map for selected product (only if this trade is for it)
+        // Sync per-product holdings map for selected product.
+        // Filter to product-specific trades only — prevents mixed-product trade arrays
+        // from being persisted to productHoldings and corrupting avgBuy in the frontend.
         if (product === user.selectedProduct) {
             user.productHoldings[user.selectedProduct] = {
                 assetHoldings: user.paperTradingState.assetHoldings,
-                trades: [...user.paperTradingState.trades],
+                trades: user.paperTradingState.trades.filter(t => t.product === product),
                 _lastPrice: price
             };
         }

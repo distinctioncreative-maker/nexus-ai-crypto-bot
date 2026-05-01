@@ -432,7 +432,21 @@ ${userMessage}`;
         const text = await aiChatQueued(systemPrompt, userPrompt, false, 500);
         onAgentResponse(ORACLE_ID, ORACLE_NAME, 'Chief Strategist', ORACLE_COLOR, text);
     } catch (err) {
-        onAgentResponse(ORACLE_ID, ORACLE_NAME, 'Chief Strategist', ORACLE_COLOR, `[offline: ${err.message}]`);
+        // Distinguish rate-limit (retryable) from config errors (not retryable)
+        const isRateLimit = err.response?.status === 429 || /429|rate.?limit|quota/i.test(err.message);
+        const isAuthError = err.response?.status === 401 || err.response?.status === 403;
+        let offlineMsg;
+        if (isRateLimit) {
+            offlineMsg = '[offline: rate-limited — Groq token quota exceeded. Wait 30–60 seconds and try again.]';
+        } else if (isAuthError) {
+            offlineMsg = '[offline: AI provider authentication failed — check GROQ_API_KEY on the server.]';
+        } else if (!GROQ_API_KEY && !process.env.OLLAMA_URL) {
+            offlineMsg = '[offline: no AI provider configured — set GROQ_API_KEY on the server to enable Oracle.]';
+        } else {
+            offlineMsg = `[offline: ${err.message}]`;
+        }
+        console.error('Oracle error:', err.message);
+        onAgentResponse(ORACLE_ID, ORACLE_NAME, 'Chief Strategist', ORACLE_COLOR, offlineMsg);
     }
 }
 

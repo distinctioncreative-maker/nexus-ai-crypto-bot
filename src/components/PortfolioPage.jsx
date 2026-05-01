@@ -3,7 +3,7 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   AreaChart, Area,
 } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, Clock, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Clock, ChevronDown, ChevronUp, RotateCcw, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { authFetch } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
@@ -37,22 +37,24 @@ function PieTip({ active, payload }) {
     );
 }
 
-const TABLE_COLS = '1fr 90px 100px 100px 90px 80px';
+const TABLE_COLS = '1fr 90px 100px 100px 90px 80px 40px';
 const INITIAL_BALANCE = 100000;
 
 function RowHeader() {
     return (
         <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: '0.5rem', padding: '0 0 0.45rem', borderBottom: '1px solid rgba(255,255,255,0.06)', fontFamily: 'var(--font-mono)', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-            <span>Asset</span><span>Qty</span><span>Avg Buy</span><span>Current</span><span>P&L $</span><span style={{ textAlign: 'right' }}>P&L %</span>
+            <span>Asset</span><span>Qty</span><span>Avg Buy</span><span>Current</span><span>P&L $</span><span style={{ textAlign: 'right' }}>P&L %</span><span></span>
         </div>
     );
 }
 
-function PositionRow({ productId, holdings, avgBuy, currentPrice, hasLivePrice }) {
+function PositionRow({ productId, holdings, avgBuy, currentPrice, hasLivePrice, onClose, closing }) {
     const base = productId.split('-')[0];
     const color = assetColor(productId);
     const unrealizedPnl = avgBuy > 0 && currentPrice > 0 ? (currentPrice - avgBuy) * holdings : null;
-    const unrealizedPct = avgBuy > 0 && currentPrice > 0 ? ((currentPrice - avgBuy) / avgBuy) * 100 : null;
+    // Cap P&L % to prevent impossible display from stale avgBuy data
+    const unrealizedPctRaw = avgBuy > 0 && currentPrice > 0 ? ((currentPrice - avgBuy) / avgBuy) * 100 : null;
+    const unrealizedPct = unrealizedPctRaw !== null ? Math.max(-99.9, Math.min(unrealizedPctRaw, 9999)) : null;
     const isGain = unrealizedPnl !== null && unrealizedPnl >= 0;
 
     return (
@@ -78,6 +80,24 @@ function PositionRow({ productId, holdings, avgBuy, currentPrice, hasLivePrice }
                         {unrealizedPct >= 0 ? '+' : ''}{unrealizedPct.toFixed(2)}%
                     </span>
                 ) : <span style={{ color: 'var(--text-secondary)' }}>—</span>}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <button
+                    onClick={() => onClose(productId)}
+                    disabled={closing}
+                    title={`Close entire ${base} position (market sell)`}
+                    style={{
+                        width: 28, height: 28, borderRadius: '6px', border: 'none',
+                        background: closing ? 'rgba(255,255,255,0.04)' : 'rgba(255,69,58,0.12)',
+                        color: closing ? 'var(--text-secondary)' : 'var(--accent-red)',
+                        cursor: closing ? 'not-allowed' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'all 0.15s',
+                        flexShrink: 0,
+                    }}
+                >
+                    <X size={11} />
+                </button>
             </div>
         </div>
     );
@@ -122,6 +142,25 @@ export default function PortfolioPage() {
     const { balance, assetHoldings, selectedProduct, trades, productHoldings, productPrices, wsConnected, setBalance, setTrades, setProductHoldings } = useStore();
     const [resetting, setResetting] = useState(false);
     const [resetConfirm, setResetConfirm] = useState(false);
+    const [closingProduct, setClosingProduct] = useState(null);
+    const [closeError, setCloseError] = useState('');
+
+    const handleClosePosition = async (productId) => {
+        setClosingProduct(productId);
+        setCloseError('');
+        try {
+            const resp = await authFetch(apiUrl('/api/paper/close-position'), {
+                method: 'POST',
+                body: JSON.stringify({ productId }),
+            });
+            const data = await resp.json();
+            if (!data.success) setCloseError(data.error || 'Close failed');
+        } catch (err) {
+            setCloseError(err.message);
+        } finally {
+            setClosingProduct(null);
+        }
+    };
 
     const handleReset = async () => {
         if (!resetConfirm) { setResetConfirm(true); return; }
@@ -157,10 +196,17 @@ export default function PortfolioPage() {
             const qty = holding?.assetHoldings ?? 0;
             if (qty <= 0.000001) continue;
 
-            const productTrades = Array.isArray(holding?.trades) ? holding.trades : trades.filter(t => t.product === productId);
+            // Always filter by product — productHoldings[x].trades can contain
+            // trades from OTHER products due to a server-side syncing bug where
+            // the merged all-trades array was saved into per-product storage.
+            // Without this filter, avgBuy mixes e.g. DOGE prices into BTC math,
+            // producing avgBuy ≈ $2 for BTC and an unrealizedPct of +3,000,000%.
+            const productTrades = Array.isArray(holding?.trades)
+                ? holding.trades.filter(t => t.product === productId)
+                : trades.filter(t => t.product === productId);
             const buys = productTrades.filter(t => t.type === 'BUY');
             const totalCost = buys.reduce((s, t) => s + t.amount * t.price, 0);
-            const totalQty = buys.reduce((s, t) => s + t.amount, 0);
+            const totalQty  = buys.reduce((s, t) => s + t.amount, 0);
             const avgBuy = totalQty > 0 ? totalCost / totalQty : 0;
 
             const livePrice = productPrices[productId] || 0;
@@ -415,6 +461,11 @@ export default function PortfolioPage() {
                         <div className="holdings-scroll-wrapper" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                         <div className="holdings-table-header"><RowHeader /></div>
 
+                        {closeError && (
+                            <div style={{ padding: '0.4rem 0.5rem', marginBottom: '0.4rem', background: 'rgba(255,69,58,0.08)', border: '1px solid rgba(255,69,58,0.25)', borderRadius: '6px', fontSize: '0.72rem', color: 'var(--accent-red)' }}>
+                                {closeError}
+                            </div>
+                        )}
                         {allPositions.length > 0 ? (
                             allPositions.map(pos => (
                                 <PositionRow
@@ -424,6 +475,8 @@ export default function PortfolioPage() {
                                     avgBuy={pos.avgBuy}
                                     currentPrice={pos.livePrice}
                                     hasLivePrice={pos.hasLivePrice}
+                                    onClose={handleClosePosition}
+                                    closing={closingProduct === pos.productId}
                                 />
                             ))
                         ) : (
@@ -443,6 +496,7 @@ export default function PortfolioPage() {
                             <span>$1.00</span>
                             <span style={{ color: 'var(--text-secondary)' }}>—</span>
                             <span style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>—</span>
+                            <span />
                         </div>
 
                         {/* Totals */}
@@ -457,6 +511,7 @@ export default function PortfolioPage() {
                             <span style={{ textAlign: 'right', color: totalPnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)' }}>
                                 {totalPnlPct >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
                             </span>
+                            <span />
                         </div>
                         </div>{/* end overflow-x wrapper */}
                     </div>
