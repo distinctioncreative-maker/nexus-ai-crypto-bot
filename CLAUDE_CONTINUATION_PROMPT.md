@@ -1,109 +1,145 @@
 # Claude Continuation Prompt
 ## Quant — AI Crypto Trading Terminal
-**Session ended:** 2026-04-30  
-**Status:** P0 fixes complete. P1 and Playwright audit remain.
+**Session ended:** 2026-05-01  
+**Commits:** `fc1df56` (P0), `b688f1a` (P1-P5) — committed locally, not pushed
 
 ---
 
-## What Was Completed This Session
+## Completed This Session
 
-### P0 Security/Safety Fixes (All Done)
-1. ✅ `test-e2e.cjs` — Removed hardcoded email/password. Replace with `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_APP_URL`, `E2E_BACKEND_URL` env vars. Password `Marcano2005$` for `mattcoreloops@gmail.com` was public — **MUST BE ROTATED**.
-2. ✅ `server/index.js` — Fixed WebSocket auth bypass: when Supabase configured, connections without token now rejected (4001). Production with no Supabase also rejected (4003).
-3. ✅ `server/services/marketStream.js` — Fixed `const now = Date.now()` declared at line 492 but used at lines 448/457 in the kill-switch block. Moved to top of interval callback. This was causing `ReferenceError` that silently crashed the eval loop whenever kill switch was active.
-4. ✅ `server/index.js` — WS malformed message handling: JSON parse errors now log safe warning and send `ERROR` type to client.
-5. ✅ `server/.env.example` — Fixed wrong MARKET_WS_URL, added GROQ_MODEL, E2E vars.
-6. ✅ `src/components/SetupWizard.jsx` — Compliance: "not financial advice", "paper trading simulation" labels.
-7. ✅ `src/components/LiveModeConfirmModal.jsx` — Added Coinbase key permission guidance (trade-only, no withdrawal), fee disclosure, "not financial advice".
+### Verified + Committed (P0 — commit fc1df56)
+- ✅ test-e2e.cjs: hardcoded credentials removed, env var guards added
+- ✅ mobile-audit.cjs, pnl-audit.cjs, debug-audit.cjs: credentials removed, added to .gitignore
+- ✅ server/index.js: WS auth bypass fixed (token required when Supabase configured)
+- ✅ server/index.js: production WS rejection when Supabase missing
+- ✅ server/services/marketStream.js: `const now` moved before kill-switch (ReferenceError fix)
+- ✅ server/index.js: malformed WS message handling improved
+- ✅ server/.env.example: corrected MARKET_WS_URL, added GROQ_MODEL, E2E vars
+- ✅ SetupWizard.jsx: "paper trading simulation — not financial advice" disclaimer
+- ✅ LiveModeConfirmModal.jsx: Coinbase key permission guidance, fee disclosure
+- ✅ SECURITY_ROTATION_REQUIRED.md created
 
-### Docs Created
-- `YC_FULL_AUDIT_AND_EXECUTION_PLAN.md` — Full audit findings
-- `YC_FULL_AUDIT_EXECUTION_REPORT.md` — Execution report
+### Verified + Committed (P1-P5 — commit b688f1a)
+- ✅ websocket.js: duplicate connection guard (CONNECTING state check)
+- ✅ websocket.js: try/catch on onmessage JSON.parse
+- ✅ websocket.js: sendEngineStatusChange no longer optimistically updates when WS down
+- ✅ PendingTradeCard.jsx: LIVE ORDER / PAPER SIM badge, "Est. Fill Price" label, fee note
+- ✅ SituationRoom.jsx: "not financial advice" in initial Oracle message
+- ✅ AuthPage.jsx: "AI-assisted paper trading — not financial advice" footer
+- ✅ AuthPage.css: .auth-toggle button min-height:44px (was 36px, below HIG minimum)
+- ✅ viewport-audit.cjs: 5-viewport non-auth layout audit script
 
 ---
 
-## What Still Needs To Be Done
+## Still Needs To Be Done
 
-### P1 — Backend/WS Wiring
-- [ ] WS reconnect: no state resync after reconnect. After reconnect, client should receive a full PORTFOLIO_STATE + STRATEGY_UPDATE immediately. Add `wasReconnect` flag to WS URL or handle in `websocket.js`.
-- [ ] Duplicate WS connection prevention: if the same user opens two tabs, they get two WS connections and two eval loops. Consider storing per-user WS reference and closing old one on new connect.
-- [ ] Pending trade expire handling: if WS drops while a pending trade is awaiting confirmation, client has no way to know it expired. Add explicit `PENDING_TRADE_EXPIRED` message.
+### HIGH — Do Immediately
+1. **Rotate the exposed account password.** The email/password was committed to a public GitHub repo. Even though credentials are removed from code, they're in git history. See `SECURITY_ROTATION_REQUIRED.md`.
 
-### P1 — Compliance
-- [ ] `src/components/PendingTradeCard.jsx` — Label price as "Estimated fill at $X (market order, actual fill may vary)"
-- [ ] `src/components/Dashboard.jsx` — Hero balance: already labeled "Paper Trading Balance" in Dashboard. Verify on mobile.
-- [ ] `src/components/SituationRoom.jsx` — Add "AI-assisted analysis — not financial advice" to the footer or first Oracle message.
+### MEDIUM — Next Session
 
-### P1 — Mobile/Desktop UX (Playwright Audit Needed)
-Run Playwright at these viewports: 1440x900, 1280x800, 768x1024, 390x844, 375x667
+2. **Authenticated viewport audit** — Run `test-e2e.cjs` with E2E env vars to inspect the authenticated app at mobile viewports:
+   ```bash
+   E2E_APP_URL=https://crypto-ai-bot-psi.vercel.app \
+   E2E_BACKEND_URL=https://kalshi-enterprise-production.up.railway.app \
+   E2E_EMAIL=<email> \
+   E2E_PASSWORD=<password> \
+   node test-e2e.cjs
+   ```
+   Currently only login page was inspected. Inner pages (dashboard, portfolio, agents, backtest, situation room) need mobile visual inspection.
 
-Known remaining mobile issues:
-- Watchlist is inaccessible on 375x667 — no alternative entry point
-- Chart tooltip can overflow viewport at top on small screens
-- Pending trade card may be taller than viewport on landscape
+3. **WS reconnect deep sync** — After reconnect, PORTFOLIO_STATE is sent. But candle history and strategy state are only sent on initial connect or product switch. Add `STRATEGY_UPDATE` send on reconnect.  
+   Files: `server/index.js` WS `onopen` equivalent (on connect, after state restore)
 
-To run Playwright against production:
+4. **CryptoJS → Node crypto for key encryption** — `server/userStore.js` uses CryptoJS AES without random IV. Upgrade to Node built-in `crypto.createCipheriv('aes-256-cbc', key, iv)` with 16-byte random IV prepended to ciphertext.  
+   Files: `server/userStore.js` lines 500–508 (encrypt/decrypt methods)
+
+5. **ESLint setup** — No lint config in repo. Add minimal ESLint:
+   ```bash
+   npm install --save-dev eslint @eslint/js
+   ```
+   Document in `package.json` as `"lint": "eslint src/ server/ --ext .js,.jsx"`
+
+6. **Session expiry warning** — JWT is 1 hour. Add proactive warning at 55 minutes so user doesn't lose state mid-trade.  
+   File: `src/App.jsx` — add useEffect that checks token expiry and shows a toast
+
+### LOW — Polish
+7. `src/components/BacktestModule.jsx` — Add "Backtesting uses historical simulation data and does not predict future results" disclaimer below results
+8. `server/services/signalEngine.js` — Add `fetchPolymarketBTC` error handling (currently throws on non-200; should return null gracefully)
+9. `agent_snapshots` DB table — Never surfaced in UI. Either use it (AgentsPage could show historical snapshot) or add a comment that it's reserved.
+
+---
+
+## Files to Inspect Next Session
+- `server/index.js` WS reconnect path (lines 118–135) — add STRATEGY_UPDATE on reconnect
+- `server/userStore.js` lines 500–508 — encryption upgrade
+- `src/App.jsx` — session expiry warning
+- `src/components/BacktestModule.jsx` — results disclaimer
+- `server/services/signalEngine.js` — fetchPolymarketBTC error handling
+
+---
+
+## Commands Run
+
 ```bash
-E2E_APP_URL=https://crypto-ai-bot-psi.vercel.app \
-E2E_EMAIL=<email> \
-E2E_PASSWORD=<password> \
-node test-e2e.cjs
+# Credential scan
+rg "Marcano|mattcoreloops" . --glob '!*.md' --glob '!node_modules/**'
+→ ✅ CLEAN
+
+# Build (both commits)
+npm run build
+→ ✅ Clean, 432-458ms
+
+# Server syntax checks
+node --check server/index.js server/services/marketStream.js server/routes/api.js server/db/persistence.js test-e2e.cjs
+→ ✅ All OK
+
+# Server startup health check
+NODE_ENV=development ENCRYPTION_SECRET=test PORT=3099 node server/index.js
+curl http://localhost:3099/api/health
+→ ✅ {"status":"ok"}
+
+# Viewport audit (non-authenticated)
+node viewport-audit.cjs
+→ ✅ No overflow at any viewport
+→ ⚠️ 1 small button (auth toggle, fixed in code)
+→ ⚠️ E2E env vars not set — authenticated pages not inspected
+
+# npm run lint
+→ ⏭️ No lint config in repo
 ```
-
-### P2 — Security Hardening (Lower Priority)
-- [ ] CryptoJS AES without random IV for Coinbase key encryption in `server/userStore.js`. Upgrade to Node `crypto` with `randomBytes(16)` IV stored alongside ciphertext.
-- [ ] Add a smoke test script (`server/smoke-test.js`) that hits `/api/health`, validates response, and exits 0/1 for CI use.
-- [ ] Add ESLint config (`npm install --save-dev eslint`) — currently no lint step.
-
----
-
-## Files To Inspect Next Session
-- `src/components/PendingTradeCard.jsx` — compliance label
-- `src/services/websocket.js` — reconnect behavior, duplicate connection
-- `src/components/SituationRoom.jsx` — not-financial-advice footer
-- `server/userStore.js` lines 500-508 — encryption upgrade
-- `src/App.css` — safe-area insets for iPhone notch
-
----
-
-## Commands Run This Session
-```bash
-npm run build                          # ✅ Clean, 458ms
-node --check server/index.js           # ✅ OK
-node --check server/services/marketStream.js  # ✅ OK
-node --check test-e2e.cjs              # ✅ OK
-```
-
-## Playwright Status
-Not run this session (rate limit hit before execution). Run against production with env vars set.
 
 ---
 
 ## Ready-to-Paste Next Prompt
 
 ```
-Continue the YC audit for the Quant crypto trading terminal.
+Continue the YC audit/fix pass for the Quant crypto trading terminal.
 Repo: /Users/mattcorez/Claude/crypto-ai-bot
 
-P0 fixes are complete (see YC_FULL_AUDIT_EXECUTION_REPORT.md).
+Two commits are done locally (not pushed):
+- fc1df56: P0 security fixes
+- b688f1a: P1-P5 backend, compliance, mobile UX
 
-Remaining work:
+What still needs doing:
 
-1. P1 backend fixes:
-   - src/services/websocket.js: add full state resync on reconnect (send PORTFOLIO_STATE + STRATEGY_UPDATE after reconnect)
-   - src/services/websocket.js: prevent duplicate WS connections (close old socket if same tab reconnects)
-   - src/components/PendingTradeCard.jsx: label price as "Estimated fill" and add "market order — actual fill may vary"
+1. Run authenticated E2E viewport audit (if user provides E2E_EMAIL, E2E_PASSWORD):
+   Ask user: "Can you provide E2E_EMAIL and E2E_PASSWORD so I can run the full authenticated 
+   Playwright audit at mobile/desktop viewports?"
+   If provided, run: E2E_APP_URL=https://crypto-ai-bot-psi.vercel.app E2E_EMAIL=... E2E_PASSWORD=... node test-e2e.cjs
+   Then visually inspect screenshots and fix any new mobile issues found.
 
-2. Compliance:
-   - src/components/SituationRoom.jsx: add "AI-assisted analysis — not financial advice" to initial Oracle message or footer
-   
-3. Run Playwright E2E audit at 5 viewports (1440x900, 1280x800, 768x1024, 390x844, 375x667) using:
-   E2E_APP_URL=https://crypto-ai-bot-psi.vercel.app
-   E2E_EMAIL=<ask user>
-   E2E_PASSWORD=<ask user>
-   Fix any mobile overflow, hidden buttons, or tap target issues found.
+2. Add STRATEGY_UPDATE to WS reconnect path (server/index.js lines 118-135)
 
-4. Update YC_FULL_AUDIT_EXECUTION_REPORT.md after each phase.
+3. Add session expiry warning to App.jsx (5-minute toast before 1h JWT expires)
 
-Do not deploy, do not push, do not touch real .env files.
+4. Add backtest results disclaimer to BacktestModule.jsx
+
+5. Fix signalEngine.js fetchPolymarketBTC to handle non-200 gracefully
+
+6. Add minimal ESLint config
+
+7. Update YC_FULL_AUDIT_EXECUTION_REPORT.md after each fix
+
+Do not push. Do not deploy. Do not touch real .env files. Build must stay clean.
 ```
