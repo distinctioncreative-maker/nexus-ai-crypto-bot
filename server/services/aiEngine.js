@@ -189,7 +189,7 @@ Buy votes: ${consensusResult.buyCount} | Sell votes: ${consensusResult.sellCount
         ? `\n=== AGENT SELF-LEARNED RULES ===\n${agentLessons}\n`
         : '';
 
-    const systemInstruction = 'You are an elite quantitative trading JSON API. Only output valid JSON with exactly these fields: action (string: BUY, SELL, or HOLD), reasoning (string), confidence (integer 0-100), take_profit_pct (number or null), stop_loss_pct (number or null), position_size_override (number or null), lesson_learned (string).';
+    const systemInstruction = 'You are an elite quantitative trading JSON API. Only output valid JSON with exactly these fields: action (string: BUY, SELL, or HOLD), reasoning (string), confidence (integer 0-100), take_profit_pct (number or null — percentage of entry price for take profit), stop_loss_pct (number or null — percentage of entry price for stop loss), position_size_override (number or null — BASE ASSET UNITS to trade, e.g. 0.015 for 0.015 BTC, NOT a USD amount; set null to use default sizing), lesson_learned (string).';
 
     const recentCandles = candles.slice(-20).map(c => {
         const t = new Date(c.time * 1000).toISOString().slice(11, 19);

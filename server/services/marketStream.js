@@ -289,9 +289,15 @@ async function executeTradeDecision(userId, productId, decision, price, history,
     }
 
     const suggestedAmount = getSuggestedTradeSize(userId, price, productId, history);
-    const amountToTrade = decision.position_size_override
-        ? Math.min(decision.position_size_override, suggestedAmount * 2)
-        : suggestedAmount;
+
+    let amountToTrade = suggestedAmount;
+    if (decision.position_size_override != null && Number.isFinite(decision.position_size_override) && decision.position_size_override > 0) {
+        // position_size_override must be BASE ASSET UNITS (not USD, not percent).
+        // Hard cap: cannot exceed maxSingleOrderUSD / price regardless of what the LLM returns.
+        // This prevents a USD-valued override (e.g. 50000) from being treated as 50000 BTC.
+        const maxUnitsFromRisk = user.riskSettings.maxSingleOrderUSD / price;
+        amountToTrade = Math.min(decision.position_size_override, suggestedAmount * 2, maxUnitsFromRisk);
+    }
 
     const riskCheck = checkTradeAllowed(userId, decision.action, amountToTrade, price, history, productId);
 

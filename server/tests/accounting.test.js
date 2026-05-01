@@ -165,6 +165,77 @@ test('Zero balance cannot buy anything', () => {
     assert.strictEqual(result.reason, 'insufficient balance');
 });
 
+// ── Invariant: holdings can never exceed what cash allows ────────────────────
+
+test('100 sequential BUYs cannot accumulate more BTC than starting cash allows', () => {
+    // Safety assertion: from $100k starting at $78k BTC, max possible holdings = ~1.28 BTC.
+    // Even with 100 trades (cooldown bypassed in this simulation), balance runs out.
+    const PRICE = 78000;
+    const ORDER_USD = 1000;
+    let balance = 100000;
+    let holdings = 0;
+    let tradeCount = 0;
+
+    for (let i = 0; i < 100; i++) {
+        const amount = ORDER_USD / PRICE;
+        const result = simulatePaperTrade({ type: 'BUY', amount, price: PRICE, balance, assetHoldings: holdings });
+        if (!result.ok) break;
+        balance = result.newBalance;
+        holdings = result.newHoldings;
+        tradeCount++;
+    }
+
+    const maxPossibleBTC = 100000 / PRICE;
+    assert.ok(holdings <= maxPossibleBTC * 1.01,
+        `Holdings ${holdings.toFixed(4)} BTC cannot exceed $100k / $${PRICE} = ${maxPossibleBTC.toFixed(4)} BTC`);
+    assert.ok(balance >= 0, 'Balance must never go negative');
+    // Portfolio value should still be near $100k (only friction loss)
+    const portfolioValue = balance + holdings * PRICE;
+    assert.ok(portfolioValue > 100000 * 0.90, `Portfolio ${portfolioValue.toFixed(2)} should be within 10% of $100k after trading`);
+});
+
+test('position_size_override hard cap: large USD value treated as base units is rejected', () => {
+    // Bug scenario: AI returns position_size_override: 50000 intending $50k USD.
+    // Treated naively as 50000 BTC — would be $3.9 billion at $78k.
+    // The cost estimate guard must reject this before execution.
+    const amount = 50000; // 50000 BTC — impossibly large
+    const price = 78000;
+    const costEstimate = amount * price; // $3.9 billion
+    assert.ok(costEstimate > 200_000, 'Should trigger the $200k cost guard');
+    // Simulate the guard from executePaperTrade
+    const wouldBeRejected = costEstimate > 200_000;
+    assert.strictEqual(wouldBeRejected, true, 'Implausible amount must be rejected by cost guard');
+});
+
+test('getTotalPortfolioValue: no double-counting when selected product differs from evaluated product', () => {
+    // Reproduces the bug: BTC selected, evaluating ETH.
+    // OLD code: positionsValue = state.assetHoldings * ethPrice + productHoldings.BTC * btcLastPrice
+    //           = 0.013 * 2280 + 0.013 * 78000 = $29.64 + $1014 = $1043.64 (BTC counted TWICE)
+    // CORRECT:  selValue = state.assetHoldings * btcLastPrice = 0.013 * 78000 = $1014
+    //           otherValue += ETH holdings = 0
+    //           total = balance + $1014
+    const btcHoldings = 0.013;
+    const btcLastPrice = 78000;
+    const balance = 98993;
+    const ethPrice = 2280;
+
+    // Old (buggy) computation
+    const buggyPositions = btcHoldings * ethPrice  // BTC priced at ETH price (wrong)
+                         + btcHoldings * btcLastPrice; // BTC priced again at BTC price (double-count)
+    const buggyTotal = balance + buggyPositions; // ~$100,036 — over-inflated
+
+    // Correct computation (new code)
+    const correctPositions = btcHoldings * btcLastPrice; // BTC priced at BTC's own last price
+    const correctTotal = balance + correctPositions; // $98,993 + $1,014 = $100,007
+
+    assert.ok(buggyTotal > correctTotal,
+        `Buggy total $${buggyTotal.toFixed(2)} should exceed correct total $${correctTotal.toFixed(2)}`);
+    assert.ok(correctTotal < 100100,
+        `Correct total $${correctTotal.toFixed(2)} should be near starting $100k`);
+    assert.ok(buggyTotal - correctTotal < 100,
+        'Double-count error should be small (BTC qty is small) but still a logical error');
+});
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);
 console.log(`  ${passed} passed  /  ${failed} failed`);

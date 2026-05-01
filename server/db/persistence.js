@@ -65,23 +65,43 @@ async function loadUserState(supabase, userId) {
         const productHoldings = settings.product_holdings || {};
 
         // Sanity check: detect impossible state.
-        // Uses _lastPrice where available; falls back to a conservative floor price so
-        // holdings with missing prices are still caught (bug: _lastPrice was sometimes
-        // absent, letting 22M AAVE slip through with estimate=$0 → billions at runtime).
-        const FLOOR_PRICE_PER_UNIT = 0.01; // $0.01/unit minimum — even SHIB is > this
-        const holdingsEstimate = Object.values(productHoldings).reduce((sum, h) => {
+        // Strategy: use _lastPrice where available (highest accuracy). When _lastPrice is
+        // missing (e.g. dropped by the old setSelectedProduct bug), apply a tiered floor:
+        //   BTC-USD  → $20,000/unit  (BTC hasn't traded below ~$15k in years)
+        //   ETH-USD  → $1,000/unit
+        //   SOL-USD  → $20/unit
+        //   Other    → $0.10/unit    (reasonable floor for altcoins that trade in cents)
+        // This catches "11 BTC with $98k cash" even when _lastPrice is absent.
+        const PRODUCT_FLOOR = {
+            'BTC-USD':  20000,
+            'ETH-USD':  1000,
+            'BNB-USD':  200,
+            'SOL-USD':  20,
+            'XRP-USD':  0.30,
+            'ADA-USD':  0.20,
+            'DOGE-USD': 0.05,
+            'SHIB-USD': 0.000005,
+        };
+        const DEFAULT_FLOOR = 0.10;
+
+        const holdingsEstimate = Object.entries(productHoldings).reduce((sum, [prod, h]) => {
             if (!h || !h.assetHoldings) return sum;
-            const price = (h._lastPrice > 0) ? h._lastPrice : FLOOR_PRICE_PER_UNIT;
-            return sum + (h.assetHoldings * price);
+            const p = (h._lastPrice > 0) ? h._lastPrice : (PRODUCT_FLOOR[prod] || DEFAULT_FLOOR);
+            return sum + (h.assetHoldings * p);
         }, 0);
         const portfolioEstimate = balance + holdingsEstimate;
-        // Also flag any single holding with > 1M units (impossible from $100k starting capital
+        // Flag any single holding with > 1M units (impossible from $100k starting capital
         // for any coin worth more than $0.10; protects against reconciliation ghost quantities)
         const hasGhostHoldings = Object.values(productHoldings).some(
             h => h && h.assetHoldings > 1_000_000
         );
+        // Flag portfolio estimates that exceed 5× the initial capital — impossible without
+        // real compounding returns from a $100k paper account.
+        const initialCapital = parseFloat(settings.initial_balance) || 100000;
         const isCorrupted = (!isNaN(rawBalance) && rawBalance < -100) ||
-            portfolioEstimate > 500_000 || hasGhostHoldings;
+            portfolioEstimate > Math.max(500_000, initialCapital * 5) ||
+            holdingsEstimate > initialCapital * 4 ||
+            hasGhostHoldings;
 
         if (isCorrupted) {
             console.warn(`⚠️ Corrupted portfolio state detected for user ${userId} (est. $${portfolioEstimate.toFixed(0)}) — auto-resetting to $100k`);

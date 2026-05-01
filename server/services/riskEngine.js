@@ -3,16 +3,34 @@ const { atr: computeAtr } = require('./strategyEngine');
 
 function getTotalPortfolioValue(user, price, productId) {
     const state = user.paperTradingState;
-    // Sum all held product positions using known prices
-    let positionsValue = state.assetHoldings * price; // current product
+    const sel = user.selectedProduct;
     const holdings = user.productHoldings || {};
-    for (const [prod, held] of Object.entries(holdings)) {
-        if (prod === productId) continue; // already counted via assetHoldings
-        if (held?.assetHoldings > 0 && held._lastPrice > 0) {
-            positionsValue += held.assetHoldings * held._lastPrice;
-        }
+
+    // Value the selected product's holdings.
+    // When evaluating the selected product itself, use the live tick price.
+    // When evaluating a DIFFERENT product, use the selected product's last known price —
+    // avoids the double-count bug where BTC holdings were priced at ETH's tick price AND
+    // again from productHoldings[BTC]._lastPrice, inflating total portfolio value by ~2×.
+    let selValue = 0;
+    if (productId === sel) {
+        selValue = state.assetHoldings * price;
+    } else {
+        const lastP = holdings[sel]?._lastPrice || 0;
+        if (lastP > 0) selValue = state.assetHoldings * lastP;
     }
-    return state.balance + positionsValue;
+
+    // Value all non-selected products at their last known prices.
+    // For the product being evaluated (productId), fall back to the tick price if _lastPrice
+    // hasn't been set yet (first trade on that product this session).
+    let otherValue = 0;
+    for (const [prod, held] of Object.entries(holdings)) {
+        if (prod === sel) continue; // already counted in selValue
+        if (!held?.assetHoldings || held.assetHoldings <= 0) continue;
+        const p = (held._lastPrice > 0) ? held._lastPrice : (prod === productId ? price : 0);
+        if (p > 0) otherValue += held.assetHoldings * p;
+    }
+
+    return state.balance + selValue + otherValue;
 }
 
 function checkTradeAllowed(userId, side, amount, price, priceHistory, productId) {
@@ -57,7 +75,11 @@ function checkTradeAllowed(userId, side, amount, price, priceHistory, productId)
 
     // Max position % per product (for BUY orders)
     if (side === 'BUY') {
-        const newHoldingsValue = (state.assetHoldings * price) + orderValueUSD;
+        // Use the correct product's existing holdings (not always the selected product's qty)
+        const existingQty = productId === user.selectedProduct
+            ? state.assetHoldings
+            : (user.productHoldings[productId]?.assetHoldings || 0);
+        const newHoldingsValue = (existingQty * price) + orderValueUSD;
         const positionPct = (newHoldingsValue / totalPortfolioValue) * 100;
         const perProductMax = rs.maxPerProductPercent || rs.maxPositionPercent;
         if (positionPct > perProductMax) {

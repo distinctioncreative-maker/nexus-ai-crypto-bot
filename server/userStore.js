@@ -186,11 +186,15 @@ class UserStore {
         // a merged array from getPaperState() that includes trades for ALL products.
         // Storing mixed trades here contaminates avgBuy calculations in the portfolio UI
         // and produces impossibly large P&L percentages (e.g. +3,000,000% for BTC).
+        // CRITICAL: preserve _lastPrice — without it the auto-heal in persistence.js uses
+        // a $0.01/unit floor and fails to detect impossible holdings (e.g. 11 BTC at $0.01
+        // = $0.11, well below the $500k corrupted-state threshold).
         if (user.selectedProduct) {
             const curProd = user.selectedProduct;
             user.productHoldings[curProd] = {
                 assetHoldings: user.paperTradingState.assetHoldings,
-                trades: user.paperTradingState.trades.filter(t => t.product === curProd)
+                trades: user.paperTradingState.trades.filter(t => t.product === curProd),
+                _lastPrice: user.productHoldings[curProd]?._lastPrice || 0
             };
         }
 
@@ -370,8 +374,6 @@ class UserStore {
         const user = this._ensureUser(userId);
 
         // ── Hard input validation — reject non-finite or degenerate inputs ──────
-        // These guards prevent impossible portfolio math from invalid market data
-        // or AI model outputs.
         if (!Number.isFinite(price) || price <= 0) {
             console.warn(`[paper-trade] REJECTED invalid price=${price} for ${userId} ${type}`);
             return false;
@@ -384,7 +386,19 @@ class UserStore {
             console.warn(`[paper-trade] REJECTED unknown type=${type} for ${userId}`);
             return false;
         }
+        // Reject implausibly large amounts — from a $100k account, even at $0.01/unit
+        // you could only buy 10,000,000 units. More than that is certainly a bug.
+        const costEstimate = amount * price;
+        if (costEstimate > 200_000) {
+            console.warn(`[paper-trade] REJECTED implausible trade: ${type} ${amount} @ $${price} = $${costEstimate.toFixed(2)} for ${userId}`);
+            return false;
+        }
         // ── End input validation ─────────────────────────────────────────────────
+
+        const balanceBefore = user.paperTradingState.balance;
+        const holdingsBefore = (productOverride || user.selectedProduct) === user.selectedProduct
+            ? user.paperTradingState.assetHoldings
+            : (user.productHoldings[productOverride || user.selectedProduct]?.assetHoldings ?? 0);
 
         if (this.checkCircuitBreaker(userId, price)) return false;
 
@@ -469,6 +483,26 @@ class UserStore {
                 _lastPrice: price
             };
         }
+
+        // ── Post-trade diagnostic log ────────────────────────────────────────────
+        const balanceAfter = user.paperTradingState.balance;
+        const holdingsAfter = product === user.selectedProduct
+            ? user.paperTradingState.assetHoldings
+            : (user.productHoldings[product]?.assetHoldings ?? 0);
+        const balanceDelta = balanceAfter - balanceBefore;
+        const holdingsDelta = holdingsAfter - holdingsBefore;
+        const expectedBalanceDelta = type === 'BUY' ? -(fillCost + feePaid) : (fillCost - feePaid);
+        const expectedHoldingsDelta = type === 'BUY' ? amount : -amount;
+        const balanceOk = Math.abs(balanceDelta - expectedBalanceDelta) < 0.01;
+        const holdingsOk = Math.abs(holdingsDelta - expectedHoldingsDelta) < 0.000001;
+        if (!balanceOk || !holdingsOk) {
+            console.error(`[paper-trade] ⚠️ INVARIANT VIOLATION for ${userId} ${type} ${amount} ${product} @ $${price}`);
+            console.error(`  balance: ${balanceBefore.toFixed(2)} → ${balanceAfter.toFixed(2)} (Δ${balanceDelta.toFixed(2)}, expected ${expectedBalanceDelta.toFixed(2)})`);
+            console.error(`  holdings: ${holdingsBefore} → ${holdingsAfter} (Δ${holdingsDelta}, expected ${expectedHoldingsDelta})`);
+        } else {
+            console.log(`[paper-trade] ${type} ${amount.toFixed(6)} ${product} @ $${price.toFixed(2)} | cash ${balanceBefore.toFixed(2)}→${balanceAfter.toFixed(2)} | qty ${holdingsBefore.toFixed(6)}→${holdingsAfter.toFixed(6)}`);
+        }
+        // ── End post-trade diagnostic ────────────────────────────────────────────
 
         // Persist trade to Supabase (fire-and-forget)
         getPersistence().saveTrade(getSupabase(), userId, trade).catch(error => console.warn('saveTrade failed:', error.message));
@@ -609,6 +643,33 @@ class UserStore {
         if (loaded.productHoldings && typeof loaded.productHoldings === 'object') {
             user.productHoldings = loaded.productHoldings;
         }
+
+        // ── In-memory corruption guard ───────────────────────────────────────────
+        // Run the same sanity check as persistence.js but using in-memory lastPrices
+        // (which are more accurate than what was stored in DB). This catches corrupted
+        // states that survived the DB auto-heal due to missing _lastPrice values.
+        const PRODUCT_FLOOR = {
+            'BTC-USD': 20000, 'ETH-USD': 1000, 'BNB-USD': 200,
+            'SOL-USD': 20, 'XRP-USD': 0.30, 'ADA-USD': 0.20,
+            'DOGE-USD': 0.05, 'SHIB-USD': 0.000005,
+        };
+        const memHoldingsEstimate = Object.entries(user.productHoldings).reduce((sum, [prod, h]) => {
+            if (!h?.assetHoldings) return sum;
+            const p = (h._lastPrice > 0) ? h._lastPrice : (PRODUCT_FLOOR[prod] || 0.10);
+            return sum + (h.assetHoldings * p);
+        }, 0);
+        const memPortfolioEstimate = user.paperTradingState.balance + memHoldingsEstimate;
+        const memInitialBalance = user.paperTradingState.initialBalance || 100000;
+        const memIsCorrupted = memPortfolioEstimate > Math.max(500_000, memInitialBalance * 5) ||
+            memHoldingsEstimate > memInitialBalance * 4;
+        if (memIsCorrupted) {
+            console.warn(`⚠️ In-memory corruption detected for user ${userId} — est. $${memPortfolioEstimate.toFixed(0)} — auto-healing`);
+            user.paperTradingState.balance = memInitialBalance;
+            user.paperTradingState.assetHoldings = 0;
+            user.paperTradingState.trades = [];
+            user.productHoldings = {};
+        }
+        // ── End corruption guard ─────────────────────────────────────────────────
 
         console.log(`✅ State restored for user ${userId} — balance: $${user.paperTradingState.balance.toFixed(2)}, trades: ${user.paperTradingState.trades.length}`);
     }
