@@ -3,7 +3,7 @@ import { Play, Square, FlaskConical, Zap, Lock, Loader } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { sendEngineStatusChange, sendTradingModeChange } from '../services/websocket';
 
-export default function EngineControl({ onLiveRequest }) {
+export default function EngineControl({ onLiveRequest, compact = false }) {
     const { engineStatus, tradingMode, hasCoinbaseKeys } = useStore();
     const [transitioning, setTransitioning] = useState(false);
 
@@ -47,6 +47,77 @@ export default function EngineControl({ onLiveRequest }) {
         const next = tradingMode === 'FULL_AUTO' ? 'AI_ASSISTED' : 'FULL_AUTO';
         sendTradingModeChange(next);
     };
+
+    if (compact) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
+                {/* Row 1: PAPER/LIVE + START/STOP */}
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                        onClick={() => !isLive && sendEngineStatusChange(isRunning ? 'STOPPED' : 'PAPER_RUNNING')}
+                        aria-label="Paper trading mode"
+                        style={{
+                            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem',
+                            minHeight: 44, borderRadius: '10px',
+                            border: `1px solid ${isPaper ? 'rgba(10,132,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                            background: isPaper ? 'rgba(10,132,255,0.15)' : 'rgba(255,255,255,0.04)',
+                            color: isPaper ? 'var(--accent-blue)' : 'rgba(255,255,255,0.45)',
+                            cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em',
+                        }}
+                    ><FlaskConical size={13} /> PAPER</button>
+                    <button
+                        onClick={() => hasCoinbaseKeys && onLiveRequest?.()}
+                        aria-label="Live trading mode"
+                        style={{
+                            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem',
+                            minHeight: 44, borderRadius: '10px',
+                            border: `1px solid ${isLive ? 'rgba(255,69,58,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                            background: isLive ? 'rgba(255,69,58,0.15)' : 'rgba(255,255,255,0.04)',
+                            color: isLive ? 'var(--accent-red)' : hasCoinbaseKeys ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.18)',
+                            cursor: hasCoinbaseKeys ? 'pointer' : 'not-allowed',
+                            opacity: hasCoinbaseKeys ? 1 : 0.5,
+                            fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.04em',
+                        }}
+                    >{hasCoinbaseKeys ? <Zap size={13} /> : <Lock size={13} />} LIVE</button>
+                </div>
+                {/* Row 2: START/STOP full-width + mode toggle */}
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                        onClick={handleStartStop}
+                        disabled={transitioning}
+                        aria-label={isRunning ? 'Stop AI trading engine' : 'Start AI trading engine'}
+                        style={{
+                            flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+                            minHeight: 44, borderRadius: '10px',
+                            border: transitioning ? '1px solid rgba(255,159,10,0.35)' : isRunning ? '1px solid rgba(48,209,88,0.4)' : '1px solid rgba(255,255,255,0.15)',
+                            background: transitioning ? 'rgba(255,159,10,0.08)' : isRunning ? 'rgba(48,209,88,0.12)' : 'rgba(255,255,255,0.07)',
+                            color: transitioning ? 'var(--accent-orange)' : isRunning ? 'var(--accent-green)' : 'var(--text-primary)',
+                            cursor: transitioning ? 'not-allowed' : 'pointer',
+                            fontSize: '0.82rem', fontWeight: 800, letterSpacing: '0.05em',
+                        }}
+                    >
+                        {transitioning
+                            ? <><Loader size={12} style={{ animation: 'spin 0.9s linear infinite' }} /> {isRunning ? 'STOPPING…' : 'STARTING…'}</>
+                            : isRunning ? <><Square size={12} fill="currentColor" /> RUNNING</> : <><Play size={12} fill="currentColor" /> START ENGINE</>}
+                    </button>
+                    <button
+                        onClick={handleTradingModeToggle}
+                        aria-label={tradingMode === 'FULL_AUTO' ? 'Switch to AI Assisted mode' : 'Switch to Full Auto mode'}
+                        style={{
+                            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
+                            minHeight: 44, borderRadius: '10px',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: tradingMode === 'AI_ASSISTED' ? 'rgba(191,90,242,0.1)' : 'rgba(255,255,255,0.04)',
+                            color: tradingMode === 'AI_ASSISTED' ? 'var(--accent-purple)' : 'rgba(255,255,255,0.4)',
+                            cursor: 'pointer', fontSize: '0.68rem', fontWeight: 700, letterSpacing: '0.03em', whiteSpace: 'nowrap',
+                        }}
+                    >
+                        {tradingMode === 'AI_ASSISTED' ? 'AI ASSIST' : 'FULL AUTO'}
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div style={{

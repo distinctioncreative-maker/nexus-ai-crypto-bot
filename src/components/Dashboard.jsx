@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown, Search, Play, Square, List, X as XIcon } from 'lucide-react';
+import { Brain, TrendingUp, Zap, ChevronDown, Activity, BarChart2, TrendingDown, Search, Play, Square, List, X as XIcon, ShieldOff } from 'lucide-react';
 import { createChart, ColorType, CandlestickSeries } from 'lightweight-charts';
 import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
-import { sendProductChange, sendEngineStatusChange } from '../services/websocket';
+import { sendProductChange, sendEngineStatusChange, sendTradingModeChange, sendKillSwitch } from '../services/websocket';
 import { authFetch } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
 import WatchlistSidebar from './WatchlistSidebar';
@@ -37,7 +37,7 @@ export default function Dashboard() {
         currentPrice, aiStatus, aiThesis, trades, balance, assetHoldings,
         isLiveMode, engineStatus, candleHistory, selectedProduct, watchlist,
         availableProducts, setAvailableProducts, lastTickTime,
-        productPrices, productHoldings,
+        productPrices, productHoldings, tradingMode, killSwitchActive,
     } = useStore();
 
     // Compute total portfolio value across all held products
@@ -268,27 +268,64 @@ export default function Dashboard() {
 
     return (
         <motion.div initial="hidden" animate="visible" variants={containerVariants}>
-            {/* Mobile engine bar — replaces navbar control on phones */}
+            {/* Mobile engine bar — replaces navbar controls on phones */}
             <div className="mobile-engine-bar">
-                <div className="mobile-engine-bar__status">
-                    <div className={`status-dot ${engineStatus !== 'STOPPED' ? 'running' : ''}`} />
-                    <span>{engineStatus === 'PAPER_RUNNING' ? 'Paper Trading' : engineStatus === 'LIVE_RUNNING' ? 'Live Trading' : 'Engine Stopped'}</span>
+                {/* Row 1: status + watchlist + mode toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', marginBottom: '0.5rem' }}>
+                    <div className="mobile-engine-bar__status" style={{ flex: 1 }}>
+                        <div className={`status-dot ${engineStatus !== 'STOPPED' ? 'running' : ''}`} />
+                        <span>{engineStatus === 'PAPER_RUNNING' ? 'Paper' : engineStatus === 'LIVE_RUNNING' ? 'LIVE' : 'Stopped'}</span>
+                    </div>
+                    <button
+                        onClick={() => sendTradingModeChange(tradingMode === 'FULL_AUTO' ? 'AI_ASSISTED' : 'FULL_AUTO')}
+                        title={tradingMode === 'FULL_AUTO' ? 'Full Auto: tap to switch to AI Assisted' : 'AI Assisted: tap to switch to Full Auto'}
+                        style={{
+                            background: tradingMode === 'AI_ASSISTED' ? 'rgba(191,90,242,0.12)' : 'rgba(255,255,255,0.06)',
+                            border: `1px solid ${tradingMode === 'AI_ASSISTED' ? 'rgba(191,90,242,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                            borderRadius: '8px', color: tradingMode === 'AI_ASSISTED' ? 'var(--accent-purple)' : 'var(--text-secondary)',
+                            padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.35rem',
+                            fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer', minHeight: 38, whiteSpace: 'nowrap',
+                        }}
+                    >
+                        {tradingMode === 'AI_ASSISTED' ? 'AI ASSIST' : 'FULL AUTO'}
+                    </button>
+                    <button
+                        onClick={() => setMobileWatchlistOpen(true)}
+                        aria-label="Open watchlist"
+                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'var(--text-secondary)', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', cursor: 'pointer', minHeight: 38 }}
+                    >
+                        <List size={14} />
+                    </button>
                 </div>
-                <button
-                    onClick={() => setMobileWatchlistOpen(true)}
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: 'var(--text-secondary)', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', cursor: 'pointer', minHeight: 44 }}
-                >
-                    <List size={14} /> Watchlist
-                </button>
-                <button
-                    className={`mobile-engine-btn ${engineStatus !== 'STOPPED' ? 'running' : ''}`}
-                    onClick={() => sendEngineStatusChange(engineStatus !== 'STOPPED' ? 'STOPPED' : 'PAPER_RUNNING')}
-                >
-                    {engineStatus !== 'STOPPED'
-                        ? <><Square size={11} style={{ marginRight: '0.35rem' }} fill="currentColor" />Stop</>
-                        : <><Play  size={11} style={{ marginRight: '0.35rem' }} fill="currentColor" />Start Paper</>
-                    }
-                </button>
+                {/* Row 2: Start/Stop + Kill Switch */}
+                <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                    <button
+                        className={`mobile-engine-btn ${engineStatus !== 'STOPPED' ? 'running' : ''}`}
+                        onClick={() => sendEngineStatusChange(engineStatus !== 'STOPPED' ? 'STOPPED' : 'PAPER_RUNNING')}
+                        style={{ flex: 2 }}
+                    >
+                        {engineStatus !== 'STOPPED'
+                            ? <><Square size={11} style={{ marginRight: '0.35rem' }} fill="currentColor" />Running — Stop</>
+                            : <><Play  size={11} style={{ marginRight: '0.35rem' }} fill="currentColor" />Start Paper</>
+                        }
+                    </button>
+                    {engineStatus !== 'STOPPED' && (
+                        <button
+                            onClick={() => sendKillSwitch(killSwitchActive ? false : true, 'Manual kill switch — mobile')}
+                            aria-label={killSwitchActive ? 'Reset kill switch' : 'Activate emergency kill switch'}
+                            style={{
+                                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem',
+                                minHeight: 44, borderRadius: '10px', cursor: 'pointer',
+                                background: killSwitchActive ? 'rgba(255,69,58,0.2)' : 'rgba(255,69,58,0.08)',
+                                border: `1px solid ${killSwitchActive ? 'rgba(255,69,58,0.5)' : 'rgba(255,69,58,0.25)'}`,
+                                color: 'var(--accent-red)', fontSize: '0.72rem', fontWeight: 700, fontFamily: 'var(--font-mono)',
+                            }}
+                        >
+                            <ShieldOff size={13} />
+                            {killSwitchActive ? 'RESET' : 'KILL'}
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Mobile watchlist bottom sheet */}

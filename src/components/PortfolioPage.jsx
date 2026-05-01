@@ -52,52 +52,80 @@ function PositionRow({ productId, holdings, avgBuy, currentPrice, hasLivePrice, 
     const base = productId.split('-')[0];
     const color = assetColor(productId);
     const unrealizedPnl = avgBuy > 0 && currentPrice > 0 ? (currentPrice - avgBuy) * holdings : null;
-    // Cap P&L % to prevent impossible display from stale avgBuy data
     const unrealizedPctRaw = avgBuy > 0 && currentPrice > 0 ? ((currentPrice - avgBuy) / avgBuy) * 100 : null;
     const unrealizedPct = unrealizedPctRaw !== null ? Math.max(-99.9, Math.min(unrealizedPctRaw, 9999)) : null;
     const isGain = unrealizedPnl !== null && unrealizedPnl >= 0;
+    const holdingValue = currentPrice > 0 ? holdings * currentPrice : null;
 
     return (
-        <div style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: '0.5rem', alignItems: 'center', padding: '0.6rem 0', borderBottom: '1px solid rgba(255,255,255,0.03)', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-                <span style={{ fontWeight: 700 }}>{base}</span>
-                {!hasLivePrice && (
-                    <span style={{ fontSize: '0.55rem', color: 'var(--text-secondary)', opacity: 0.6 }}>last</span>
-                )}
+        /* Desktop: grid table row | Mobile (.holdings-card): stacked card */
+        <div className="holdings-row" style={{ fontFamily: 'var(--font-mono)' }}>
+            {/* Desktop columns */}
+            <div className="holdings-row__desktop" style={{ display: 'grid', gridTemplateColumns: TABLE_COLS, gap: '0.5rem', alignItems: 'center', padding: '0.6rem 0', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.72rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                    <span style={{ fontWeight: 700 }}>{base}</span>
+                    {!hasLivePrice && <span style={{ fontSize: '0.55rem', color: 'var(--text-secondary)', opacity: 0.6 }}>last</span>}
+                </div>
+                <span style={{ color: 'var(--text-secondary)' }}>{holdings < 0.001 ? holdings.toFixed(8) : holdings.toFixed(6)}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{avgBuy > 0 ? fmtPrice(avgBuy) : '—'}</span>
+                <span>{currentPrice > 0 ? fmtPrice(currentPrice) : '—'}</span>
+                <span style={{ color: unrealizedPnl !== null ? (isGain ? 'var(--accent-green)' : 'var(--accent-red)') : 'var(--text-secondary)', fontWeight: 600 }}>
+                    {unrealizedPnl !== null ? `${isGain ? '+' : '-'}$${Math.abs(unrealizedPnl).toFixed(2)}` : '—'}
+                </span>
+                <div style={{ textAlign: 'right' }}>
+                    {unrealizedPct !== null ? (
+                        <span style={{ background: isGain ? 'rgba(48,209,88,0.1)' : 'rgba(255,69,58,0.1)', color: isGain ? 'var(--accent-green)' : 'var(--accent-red)', padding: '0.12rem 0.45rem', borderRadius: '4px', fontWeight: 700, fontSize: '0.65rem' }}>
+                            {unrealizedPct >= 0 ? '+' : ''}{unrealizedPct.toFixed(2)}%
+                        </span>
+                    ) : <span style={{ color: 'var(--text-secondary)' }}>—</span>}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <button onClick={() => onClose(productId)} disabled={closing} title={`Close entire ${base} position`}
+                        style={{ width: 28, height: 28, borderRadius: '6px', border: 'none', background: closing ? 'rgba(255,255,255,0.04)' : 'rgba(255,69,58,0.12)', color: closing ? 'var(--text-secondary)' : 'var(--accent-red)', cursor: closing ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <X size={11} />
+                    </button>
+                </div>
             </div>
-            <span style={{ color: 'var(--text-secondary)' }}>
-                {holdings < 0.001 ? holdings.toFixed(8) : holdings.toFixed(6)}
-            </span>
-            <span style={{ color: 'var(--text-secondary)' }}>{avgBuy > 0 ? fmtPrice(avgBuy) : '—'}</span>
-            <span>{currentPrice > 0 ? fmtPrice(currentPrice) : '—'}</span>
-            <span style={{ color: unrealizedPnl !== null ? (isGain ? 'var(--accent-green)' : 'var(--accent-red)') : 'var(--text-secondary)', fontWeight: 600 }}>
-                {unrealizedPnl !== null ? `${isGain ? '+' : '-'}$${Math.abs(unrealizedPnl).toFixed(2)}` : '—'}
-            </span>
-            <div style={{ textAlign: 'right' }}>
-                {unrealizedPct !== null ? (
-                    <span style={{ background: isGain ? 'rgba(48,209,88,0.1)' : 'rgba(255,69,58,0.1)', color: isGain ? 'var(--accent-green)' : 'var(--accent-red)', padding: '0.12rem 0.45rem', borderRadius: '4px', fontWeight: 700, fontSize: '0.65rem' }}>
-                        {unrealizedPct >= 0 ? '+' : ''}{unrealizedPct.toFixed(2)}%
-                    </span>
-                ) : <span style={{ color: 'var(--text-secondary)' }}>—</span>}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <button
-                    onClick={() => onClose(productId)}
-                    disabled={closing}
-                    title={`Close entire ${base} position (market sell)`}
-                    style={{
-                        width: 28, height: 28, borderRadius: '6px', border: 'none',
-                        background: closing ? 'rgba(255,255,255,0.04)' : 'rgba(255,69,58,0.12)',
-                        color: closing ? 'var(--text-secondary)' : 'var(--accent-red)',
-                        cursor: closing ? 'not-allowed' : 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        transition: 'all 0.15s',
-                        flexShrink: 0,
-                    }}
-                >
-                    <X size={11} />
-                </button>
+
+            {/* Mobile card layout */}
+            <div className="holdings-row__mobile" style={{
+                display: 'none', padding: '0.75rem', marginBottom: '0.5rem',
+                background: 'rgba(255,255,255,0.03)', borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.06)',
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
+                        <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{base}</span>
+                        {!hasLivePrice && <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', opacity: 0.6 }}>last price</span>}
+                    </div>
+                    {holdingValue !== null && (
+                        <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>${holdingValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    )}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                    <span>{holdings < 0.001 ? holdings.toFixed(8) : holdings.toFixed(6)} {base}</span>
+                    <span>avg {avgBuy > 0 ? fmtPrice(avgBuy) : '—'} → {currentPrice > 0 ? fmtPrice(currentPrice) : '—'}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        {unrealizedPnl !== null && (
+                            <span style={{ color: isGain ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight: 600, fontSize: '0.8rem' }}>
+                                {isGain ? '+' : '-'}${Math.abs(unrealizedPnl).toFixed(2)}
+                            </span>
+                        )}
+                        {unrealizedPct !== null && (
+                            <span style={{ background: isGain ? 'rgba(48,209,88,0.1)' : 'rgba(255,69,58,0.1)', color: isGain ? 'var(--accent-green)' : 'var(--accent-red)', padding: '0.15rem 0.5rem', borderRadius: '4px', fontWeight: 700, fontSize: '0.7rem' }}>
+                                {unrealizedPct >= 0 ? '+' : ''}{unrealizedPct.toFixed(2)}%
+                            </span>
+                        )}
+                    </div>
+                    <button onClick={() => onClose(productId)} disabled={closing} aria-label={`Close ${base} position`}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,69,58,0.3)', background: 'rgba(255,69,58,0.08)', color: 'var(--accent-red)', cursor: closing ? 'not-allowed' : 'pointer', fontSize: '0.72rem', fontWeight: 600, minHeight: 36, opacity: closing ? 0.5 : 1 }}>
+                        <X size={12} /> Close
+                    </button>
+                </div>
             </div>
         </div>
     );

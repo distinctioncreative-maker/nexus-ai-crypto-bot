@@ -3,12 +3,13 @@ import { ShieldOff, AlertTriangle, X, Loader } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { sendKillSwitch } from '../services/websocket';
 
-export default function KillSwitch() {
+export default function KillSwitch({ compact = false }) {
     const { killSwitchActive, killSwitchReason, killSwitchPending, engineStatus } = useStore();
     const [showConfirm, setShowConfirm] = useState(false);
 
     // Show whenever engine is running (paper OR live) or kill switch is already active
-    if (engineStatus === 'STOPPED' && !killSwitchActive) return null;
+    // compact=true: always render (used in More drawer where engine may not be running)
+    if (!compact && engineStatus === 'STOPPED' && !killSwitchActive) return null;
 
     const handleActivate = () => {
         sendKillSwitch(true, 'Manual kill switch — user activated');
@@ -37,12 +38,15 @@ export default function KillSwitch() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.5rem',
-                    padding: '0.35rem 0.75rem',
+                    padding: compact ? '0.6rem 1rem' : '0.35rem 0.75rem',
+                    width: compact ? '100%' : undefined,
+                    justifyContent: compact ? 'space-between' : undefined,
                     background: 'rgba(255, 69, 58, 0.15)',
                     border: '1px solid rgba(255, 69, 58, 0.4)',
-                    borderRadius: '8px',
+                    borderRadius: compact ? '10px' : '8px',
                     fontSize: '0.75rem',
                     color: 'var(--accent-red)',
+                    minHeight: compact ? 44 : undefined,
                 }}>
                     <ShieldOff size={14} />
                     <span title={killSwitchReason || 'Kill switch active'}>KILL SWITCH ACTIVE</span>
@@ -65,23 +69,29 @@ export default function KillSwitch() {
             ) : (
                 <button
                     onClick={() => setShowConfirm(true)}
+                    aria-label="Activate emergency kill switch to halt all trading"
                     style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '0.4rem',
-                        padding: '0.35rem 0.75rem',
+                        padding: compact ? '0.6rem 1rem' : '0.35rem 0.75rem',
+                        width: compact ? '100%' : undefined,
+                        justifyContent: compact ? 'center' : undefined,
                         background: 'rgba(255, 69, 58, 0.1)',
                         border: '1px solid rgba(255, 69, 58, 0.3)',
-                        borderRadius: '8px',
+                        borderRadius: compact ? '10px' : '8px',
                         color: 'var(--accent-red)',
-                        cursor: 'pointer',
+                        cursor: engineStatus === 'STOPPED' && !killSwitchActive ? 'not-allowed' : 'pointer',
+                        opacity: engineStatus === 'STOPPED' && !killSwitchActive ? 0.4 : 1,
                         fontSize: '0.75rem',
                         fontFamily: 'var(--font-mono)',
+                        minHeight: compact ? 44 : undefined,
                     }}
-                    title="Emergency Kill Switch"
+                    title={engineStatus === 'STOPPED' ? 'Start engine first' : 'Emergency Kill Switch'}
+                    disabled={engineStatus === 'STOPPED' && !killSwitchActive}
                 >
                     <ShieldOff size={14} />
-                    KILL
+                    {compact ? 'KILL SWITCH' : 'KILL'}
                 </button>
             )}
 

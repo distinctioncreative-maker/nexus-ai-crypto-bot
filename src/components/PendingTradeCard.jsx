@@ -45,16 +45,20 @@ export default function PendingTradeCard() {
         <div style={{
             position: 'fixed', inset: 0, zIndex: 8000,
             background: 'rgba(0,0,0,0.8)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
             backdropFilter: 'blur(4px)'
         }}>
+            {/* Bottom sheet on mobile, centered card on desktop */}
             <div style={{
                 background: 'var(--bg-card)',
                 border: `1px solid ${accentColor}40`,
-                borderRadius: '20px',
-                padding: '2rem',
-                width: '460px',
-                maxWidth: '95vw'
+                borderRadius: 'clamp(20px, 4vw, 20px) clamp(20px, 4vw, 20px) 0 0',
+                padding: 'clamp(1.25rem, 5vw, 2rem)',
+                width: '100%',
+                maxWidth: '480px',
+                maxHeight: '92vh',
+                overflowY: 'auto',
+                paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))',
             }}>
                 {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
@@ -169,33 +173,35 @@ export default function PendingTradeCard() {
                     </div>
                 )}
 
-                {/* Buttons */}
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                    <button
-                        onClick={() => sendConfirmTrade(pendingTrade.tradeId, false)}
-                        style={{
-                            flex: 1, padding: '0.75rem',
-                            background: 'rgba(255, 69, 58, 0.1)',
-                            border: '1px solid rgba(255, 69, 58, 0.3)',
-                            borderRadius: '10px', color: 'var(--accent-red)',
-                            cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem'
-                        }}
-                    >
-                        <X size={16} /> Reject
-                    </button>
+                {/* Buttons — stacked for better mobile tap targets */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                     <button
                         onClick={() => sendConfirmTrade(pendingTrade.tradeId, true, customAmount)}
                         style={{
-                            flex: 2, padding: '0.75rem',
+                            width: '100%', padding: '0.85rem',
                             background: isBuy ? 'rgba(52, 199, 89, 0.15)' : 'rgba(255, 69, 58, 0.15)',
                             border: `1px solid ${accentColor}50`,
-                            borderRadius: '10px', color: accentColor,
-                            cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem'
+                            borderRadius: '12px', color: accentColor,
+                            cursor: 'pointer', fontWeight: 700, fontSize: '1rem',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+                            minHeight: 52,
                         }}
                     >
-                        <Check size={16} /> Accept {pendingTrade.side}
+                        <Check size={18} /> Accept {pendingTrade.side}
+                    </button>
+                    <button
+                        onClick={() => sendConfirmTrade(pendingTrade.tradeId, false)}
+                        style={{
+                            width: '100%', padding: '0.75rem',
+                            background: 'rgba(255,255,255,0.04)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '12px', color: 'var(--text-secondary)',
+                            cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+                            minHeight: 44,
+                        }}
+                    >
+                        <X size={16} /> Reject Trade
                     </button>
                 </div>
             </div>

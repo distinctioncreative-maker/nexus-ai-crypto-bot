@@ -275,27 +275,82 @@ function App() {
             </button>
           </nav>
 
-          {/* More drawer — slides up on mobile with secondary nav items */}
+          {/* More drawer — slides up on mobile with controls + secondary nav */}
           {moreDrawerOpen && (
             <>
               <div
                 style={{ position: 'fixed', inset: 0, zIndex: 499 }}
                 onClick={() => setMoreDrawerOpen(false)}
               />
-              <div className="nav-more-drawer">
+              <div className="nav-more-drawer" role="dialog" aria-label="More options" aria-modal="true">
+                {/* Drag handle */}
                 <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)', margin: '0 auto 1rem' }} />
-                <NavLink to="/intelligence" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} onClick={() => setMoreDrawerOpen(false)}
-                  style={{ flexDirection: 'row', gap: '0.75rem', padding: '0.75rem', borderRadius: 12 }}>
-                  <BrainCircuit size={20}/> <span>Market Intel</span>
-                </NavLink>
-                <NavLink to="/backtest" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} onClick={() => setMoreDrawerOpen(false)}
-                  style={{ flexDirection: 'row', gap: '0.75rem', padding: '0.75rem', borderRadius: 12 }}>
-                  <Binary size={20}/> <span>Backtest</span>
-                </NavLink>
-                <NavLink to="/changelog" className={({isActive}) => `nav-btn ${isActive ? 'active' : ''}`} onClick={() => setMoreDrawerOpen(false)}
-                  style={{ flexDirection: 'row', gap: '0.75rem', padding: '0.75rem', borderRadius: 12 }}>
-                  <BookOpen size={20}/> <span>Guide</span>
-                </NavLink>
+
+                {/* ── Trading Engine Section ── */}
+                <div className="drawer-section">
+                  <div className="drawer-section-label">Trading Engine</div>
+                  <EngineControl
+                    compact
+                    onLiveRequest={() => { setMoreDrawerOpen(false); setShowLiveConfirm(true); }}
+                  />
+                </div>
+
+                {/* ── Safety Section ── */}
+                <div className="drawer-section">
+                  <div className="drawer-section-label">Safety</div>
+                  <KillSwitch compact />
+                </div>
+
+                {/* ── Settings Section ── */}
+                <div className="drawer-section">
+                  <div className="drawer-section-label">Settings</div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <RiskSettingsModal drawerTrigger />
+                    <button
+                      onClick={() => { setShowReconfigure(true); setMoreDrawerOpen(false); }}
+                      aria-label="Update API keys"
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                        minHeight: 44, borderRadius: '10px', cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                        color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600,
+                      }}
+                    >
+                      <KeyRound size={15} /> API Keys
+                    </button>
+                  </div>
+                </div>
+
+                {/* ── Navigate Section ── */}
+                <div className="drawer-section">
+                  <div className="drawer-section-label">Navigate</div>
+                  <NavLink to="/intelligence" className={({isActive}) => `nav-btn drawer-nav-item ${isActive ? 'active' : ''}`} onClick={() => setMoreDrawerOpen(false)}>
+                    <BrainCircuit size={18}/> <span>Market Intel</span>
+                  </NavLink>
+                  <NavLink to="/backtest" className={({isActive}) => `nav-btn drawer-nav-item ${isActive ? 'active' : ''}`} onClick={() => setMoreDrawerOpen(false)}>
+                    <Binary size={18}/> <span>Backtest</span>
+                  </NavLink>
+                  <NavLink to="/changelog" className={({isActive}) => `nav-btn drawer-nav-item ${isActive ? 'active' : ''}`} onClick={() => setMoreDrawerOpen(false)}>
+                    <BookOpen size={18}/> <span>Guide</span>
+                  </NavLink>
+                </div>
+
+                {/* ── Account Section ── */}
+                <div className="drawer-section">
+                  <div className="drawer-section-label">Account</div>
+                  <button
+                    onClick={() => { handleSignOut(); setMoreDrawerOpen(false); }}
+                    aria-label="Sign out of your account"
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                      minHeight: 44, borderRadius: '10px', cursor: 'pointer',
+                      background: 'rgba(255,69,58,0.06)', border: '1px solid rgba(255,69,58,0.15)',
+                      color: 'var(--accent-red)', fontSize: '0.8rem', fontWeight: 600,
+                    }}
+                  >
+                    <LogOut size={15} /> Sign Out
+                  </button>
+                </div>
               </div>
             </>
           )}

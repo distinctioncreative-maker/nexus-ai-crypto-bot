@@ -551,6 +551,43 @@
         border-radius: 20px 20px 0 0;
         padding: 0.75rem 1rem 1rem;
         animation: slideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+        max-height: 85vh;
+        overflow-y: auto;
+        gap: 0;
+    }
+
+    /* Drawer section: labeled group of controls */
+    .drawer-section {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        padding: 0.6rem 0;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .drawer-section:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+    }
+    .drawer-section-label {
+        font-size: 0.62rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.25);
+        padding-bottom: 0.25rem;
+    }
+    /* Nav items inside drawer: row layout */
+    .drawer-nav-item {
+        flex-direction: row !important;
+        gap: 0.75rem !important;
+        padding: 0.7rem 0.5rem !important;
+        border-radius: 10px !important;
+        min-height: 44px;
+        box-shadow: none !important;
+    }
+    .drawer-nav-item.active {
+        background: rgba(10,132,255,0.1) !important;
+        box-shadow: none !important;
     }
 
     /* Risk settings modal → bottom sheet on mobile */
@@ -666,6 +703,12 @@
         z-index: 600 !important;
         box-shadow: 0 -8px 32px rgba(0,0,0,0.6) !important;
     }
+
+    /* ── Holdings: switch from table to cards on mobile ── */
+    .holdings-row__desktop { display: none !important; }
+    .holdings-row__mobile  { display: block !important; }
+    /* Hide desktop table header too */
+    .holdings-table-header > div { display: none !important; }
 
     /* ── Holdings table ── */
     .holdings-scroll-wrapper::after {

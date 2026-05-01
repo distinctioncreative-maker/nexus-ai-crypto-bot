@@ -133,7 +133,7 @@ function buildDiff(prev, next) {
     return changes;
 }
 
-export default function RiskSettingsModal() {
+export default function RiskSettingsModal({ drawerTrigger = false }) {
     const { riskSettings, setRiskSettings } = useStore();
     const [open, setOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('sizing');
@@ -236,7 +236,13 @@ export default function RiskSettingsModal() {
 
             <button
                 onClick={handleOpen}
-                style={{
+                aria-label="Open risk settings"
+                style={drawerTrigger ? {
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                    minHeight: 44, borderRadius: '10px', cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                    color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600,
+                } : {
                     background: 'rgba(255,255,255,0.06)',
                     border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: '8px',
@@ -248,7 +254,8 @@ export default function RiskSettingsModal() {
                 }}
                 title="Risk Settings"
             >
-                <Settings size={18} />
+                <Settings size={drawerTrigger ? 15 : 18} />
+                {drawerTrigger && <span>Risk Settings</span>}
             </button>
 
             {open && (
