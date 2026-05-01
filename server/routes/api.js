@@ -108,15 +108,28 @@ router.get('/status', authenticate, async (req, res) => {
 router.post('/setup', authenticate, async (req, res) => {
     const { coinbaseKey, coinbaseSecret } = req.body;
 
-    // Validate AI provider is reachable (Groq takes priority over Ollama)
-    if (!process.env.GROQ_API_KEY) {
+    // Determine AI provider availability — do NOT block setup if AI is unavailable.
+    // Paper trading works in degraded mode without AI; signals and agent analysis
+    // will be skipped but the market stream and portfolio still function.
+    let aiProvider = 'none';
+    let aiWarning = null;
+
+    if (process.env.GROQ_API_KEY) {
+        aiProvider = 'groq';
+    } else {
+        // Try Ollama — if unreachable, proceed in degraded mode (paper trading still works)
         const ollamaResult = await validateOllamaConnection();
-        if (!ollamaResult.valid) {
-            return res.status(400).json({ error: ollamaResult.error });
+        if (ollamaResult.valid) {
+            aiProvider = 'ollama';
+        } else {
+            // Degraded mode: no AI provider. Paper trading continues without AI signals.
+            aiWarning = 'No AI provider configured. Paper trading will run without AI signals. ' +
+                'Set GROQ_API_KEY on the server to enable AI trading analysis.';
+            console.warn(`⚠️ Setup: no AI provider for user ${req.userId} — running in degraded mode`);
         }
     }
 
-    // Validate Coinbase keys only if provided
+    // Validate Coinbase keys only if provided (live trading only)
     if (coinbaseKey && coinbaseSecret) {
         const cbResult = await validateCoinbaseKeys(coinbaseKey, coinbaseSecret);
         if (!cbResult.valid) {
@@ -125,10 +138,16 @@ router.post('/setup', authenticate, async (req, res) => {
     }
 
     userStore.setKeys(req.userId, coinbaseKey || null, coinbaseSecret || null);
-    const provider = process.env.GROQ_API_KEY ? 'Groq' : 'Ollama';
-    console.log(`🔒 Setup complete for user ${req.userId} — AI provider: ${provider}`);
+    console.log(`🔒 Setup complete for user ${req.userId} — AI provider: ${aiProvider}`);
     saveUserSettings(supabase, req.userId, userStore._ensureUser(req.userId)).catch(error => console.warn('setup persistence failed:', error.message));
-    res.json({ success: true, message: `${provider} AI connected. Start paper trading when ready.` });
+
+    const message = aiProvider === 'groq'
+        ? 'Groq AI connected. Start paper trading when ready.'
+        : aiProvider === 'ollama'
+            ? 'Ollama AI connected. Start paper trading when ready.'
+            : 'Paper trading ready (degraded mode — AI signals unavailable). Set GROQ_API_KEY to enable AI.';
+
+    res.json({ success: true, message, aiProvider, aiWarning });
 });
 
 // Protected: fetch this user's portfolio

@@ -332,7 +332,7 @@ function App() {
         />
       )}
 
-      <DebugPanel />
+      {import.meta.env.DEV && <DebugPanel />}
 
       {showReconfigure && (
         <div style={{

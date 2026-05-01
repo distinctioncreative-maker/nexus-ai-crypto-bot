@@ -248,10 +248,33 @@ async function executeLiveOrder(userId, action, amount, price, productId, reason
 
 module.exports.executeLiveOrder = executeLiveOrder;
 
+// Minimum time (ms) between FULL_AUTO executions for the same product.
+// Prevents BUY-spam when the AI repeatedly signals BUY on a strong trend.
+// AI_ASSISTED mode is unaffected — user confirms each trade manually.
+const TRADE_EXECUTION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes per product
+
 // Execute a trade decision for a specific product
 async function executeTradeDecision(userId, productId, decision, price, history, broadcastFn) {
     const user = userStore._ensureUser(userId);
     const engine = userStore.getEngineState(userId);
+
+    // ── Per-product execution cooldown (FULL_AUTO only) ───────────────────────
+    // After any trade executes for a product, block further FULL_AUTO trades for
+    // TRADE_EXECUTION_COOLDOWN_MS. This prevents the bot from entering repeated
+    // positions on every 30s eval cycle during a strong trend.
+    // AI_ASSISTED trades go through the pending-trade UI; user confirms manually, so
+    // no cooldown is needed there (it already has a 60s confirmation window).
+    if (engine.tradingMode !== 'AI_ASSISTED' && engine.engineStatus !== 'LIVE_RUNNING') {
+        if (!user.lastTradeByProduct) user.lastTradeByProduct = {};
+        const lastTradeTs = user.lastTradeByProduct[productId] || 0;
+        const msSinceLast = Date.now() - lastTradeTs;
+        if (msSinceLast < TRADE_EXECUTION_COOLDOWN_MS) {
+            const waitSec = Math.ceil((TRADE_EXECUTION_COOLDOWN_MS - msSinceLast) / 1000);
+            broadcastFn('AI_STATUS', `[${productId}] ${decision.action} signal — execution cooldown ${waitSec}s remaining`);
+            return;
+        }
+    }
+    // ── End cooldown check ────────────────────────────────────────────────────
 
     // Apply AI's dynamic TP/SL (only for the selected product to keep settings simple)
     if (productId === user.selectedProduct && (decision.take_profit_pct || decision.stop_loss_pct)) {
@@ -300,6 +323,10 @@ async function executeTradeDecision(userId, productId, decision, price, history,
         // Full Auto paper execution
         const executed = userStore.executePaperTrade(userId, decision.action, finalAmount, price, decision.reasoning, productId);
         if (executed) {
+            // Stamp the cooldown timer so the next eval cycle doesn't immediately re-execute
+            if (!user.lastTradeByProduct) user.lastTradeByProduct = {};
+            user.lastTradeByProduct[productId] = Date.now();
+
             broadcastFn('TRADE_EXEC', executed);
             broadcastFn('NOTIFICATION', userStore.getNotifications(userId)[0]);
             if (decision.action === 'BUY') {

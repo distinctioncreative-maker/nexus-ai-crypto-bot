@@ -20,7 +20,9 @@ export function debugLog(type, message, data = null) {
     listeners.forEach(fn => fn());
 }
 
-// Patch global fetch to auto-log API calls
+// Patch global fetch to auto-log API calls — dev only
+// In production the fetch patch is skipped to avoid overhead and accidental log exposure
+if (import.meta.env.DEV) {
 const _originalFetch = window.fetch;
 window.fetch = async (...args) => {
     const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '?';
@@ -43,6 +45,7 @@ window.fetch = async (...args) => {
         throw err;
     }
 };
+} // end if (import.meta.env.DEV)
 
 export default function DebugPanel() {
     const [open, setOpen] = useState(false);

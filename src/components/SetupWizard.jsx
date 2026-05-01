@@ -7,11 +7,13 @@ import './SetupWizard.css';
 export default function SetupWizard({ onComplete }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [degradedWarning, setDegradedWarning] = useState('');
 
     const handleLaunch = async (e) => {
         e.preventDefault();
         setLoading(true);
         setError('');
+        setDegradedWarning('');
 
         try {
             const response = await authFetch(apiUrl('/api/setup'), {
@@ -21,14 +23,18 @@ export default function SetupWizard({ onComplete }) {
             const data = await readApiResponse(response);
 
             if (data.success) {
+                // If AI provider is unavailable, show a degraded-mode warning before proceeding
+                if (data.aiWarning) setDegradedWarning(data.aiWarning);
                 onComplete();
             } else {
                 setError(data.error || 'Failed to connect to backend');
             }
         } catch (err) {
-            setError(err.message === 'Failed to fetch'
-                ? 'Cannot reach backend. Make sure the server is running.'
-                : err.message
+            setError(err.message === 'Request timed out — backend is slow or unreachable'
+                ? 'Backend is not responding. Check that the server is running and try again.'
+                : err.message === 'Failed to fetch'
+                    ? 'Cannot reach backend. Make sure the server is running.'
+                    : err.message
             );
         } finally {
             setLoading(false);
@@ -69,6 +75,11 @@ export default function SetupWizard({ onComplete }) {
 
             <form onSubmit={handleLaunch} className="wizard-form">
                 {error && <div className="error-box">{error}</div>}
+                {degradedWarning && (
+                    <div style={{ background: 'rgba(255,159,10,0.08)', border: '1px solid rgba(255,159,10,0.25)', borderRadius: '8px', padding: '0.6rem 0.85rem', fontSize: '0.72rem', color: 'rgba(255,159,10,0.9)', lineHeight: 1.5 }}>
+                        ⚠ {degradedWarning}
+                    </div>
+                )}
 
                 <button type="submit" className="connect-btn pulse" disabled={loading}>
                     {loading ? 'Launching…' : 'Launch Paper Trading'}

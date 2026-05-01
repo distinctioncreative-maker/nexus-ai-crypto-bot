@@ -91,6 +91,9 @@ class UserStore {
                 },
                 // Per-product holdings: { 'BTC-USD': { assetHoldings: 0, trades: [] }, ... }
                 productHoldings: {},
+                // Per-product last-execution timestamp — used to enforce trade cooldown.
+                // Map<productId, timestamp_ms>. Prevents repeated BUY spam into a product.
+                lastTradeByProduct: {},
                 circuitBreaker: {
                     tripped: false,
                     maxDrawdownPercent: 20.0,
@@ -339,8 +342,45 @@ class UserStore {
         return false;
     }
 
+    /**
+     * Execute a paper (simulated) trade.
+     *
+     * UNITS:
+     *   `amount`  — base asset quantity (e.g. 0.013 BTC, 21.22 AAVE).
+     *               Never USD notional. Caller (riskEngine.getSuggestedTradeSize) is
+     *               responsible for converting USD → base units by dividing by price.
+     *   `price`   — market price in USD per base unit (e.g. 77000 USD/BTC).
+     *   `cost`    — amount × price → USD notional of the trade (before fees/slippage).
+     *   `fillPrice` — actual simulated fill price: price × (1 ± PAPER_SLIPPAGE).
+     *   `fillCost`  — amount × fillPrice (includes slippage, excludes fee).
+     *   `feePaid`   — fillCost × PAPER_TAKER_FEE (0.6% Coinbase Advanced taker fee).
+     *   BUY totalCost  = fillCost + feePaid (cash deducted from balance).
+     *   SELL netProceeds = fillCost − feePaid (cash added to balance).
+     *   `balance` — USD cash remaining. Cannot go negative.
+     *   `assetHoldings` — base-unit quantity of the product held. Cannot go negative.
+     *
+     * PORTFOLIO VALUE = balance + Σ(product.assetHoldings × product._lastPrice)
+     */
     executePaperTrade(userId, type, amount, price, reason, productOverride) {
         const user = this._ensureUser(userId);
+
+        // ── Hard input validation — reject non-finite or degenerate inputs ──────
+        // These guards prevent impossible portfolio math from invalid market data
+        // or AI model outputs.
+        if (!Number.isFinite(price) || price <= 0) {
+            console.warn(`[paper-trade] REJECTED invalid price=${price} for ${userId} ${type}`);
+            return false;
+        }
+        if (!Number.isFinite(amount) || amount <= 0) {
+            console.warn(`[paper-trade] REJECTED invalid amount=${amount} for ${userId} ${type}`);
+            return false;
+        }
+        if (!['BUY', 'SELL'].includes(type)) {
+            console.warn(`[paper-trade] REJECTED unknown type=${type} for ${userId}`);
+            return false;
+        }
+        // ── End input validation ─────────────────────────────────────────────────
+
         if (this.checkCircuitBreaker(userId, price)) return false;
 
         const product = productOverride || user.selectedProduct;

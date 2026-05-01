@@ -245,6 +245,21 @@ export default function BacktestModule() {
                 </div>
               )}
 
+              {/* Warnings */}
+              {(results.test?.totalTrades === 0) && (
+                <div style={{ background: 'rgba(255,159,10,0.08)', border: '1px solid rgba(255,159,10,0.25)', borderRadius: '8px', padding: '0.65rem 0.9rem', fontSize: '0.73rem', color: 'rgba(255,159,10,0.9)', lineHeight: 1.5 }}>
+                  ⚠ <strong>No out-of-sample trades.</strong> The strategy generated zero trades on unseen data. This makes the test-period results statistically meaningless — the strategy may be over-fit to the training window or the out-of-sample period was too short. Consider using a longer time range.
+                </div>
+              )}
+              {(results.test?.totalTrades > 0 && results.test?.totalTrades < 5) && (
+                <div style={{ background: 'rgba(255,159,10,0.08)', border: '1px solid rgba(255,159,10,0.25)', borderRadius: '8px', padding: '0.65rem 0.9rem', fontSize: '0.73rem', color: 'rgba(255,159,10,0.9)', lineHeight: 1.5 }}>
+                  ⚠ <strong>Low sample size</strong> ({results.test.totalTrades} out-of-sample trades). Results may not be statistically reliable.
+                </div>
+              )}
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', lineHeight: 1.55, opacity: 0.7, padding: '0 0.1rem' }}>
+                ⓘ Simulated results include ~0.6% taker fee + 0.1% slippage per trade. Past backtested performance <strong>does not predict future results</strong>. This is not financial advice.
+              </div>
+
               {/* Stats side by side */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <ResultBlock label={`Training (${Math.floor(results.totalCandles * 0.8)} candles)`} data={results.train} />
