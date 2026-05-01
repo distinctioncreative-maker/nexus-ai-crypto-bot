@@ -52,12 +52,18 @@ export default function LiveModeConfirmModal({ onConfirm, onCancel, riskSettings
                     lineHeight: 1.7
                 }}>
                     <p style={{ margin: '0 0 0.5rem 0' }}>
-                        This will connect the AI directly to your <strong style={{ color: 'var(--text-primary)' }}>real Coinbase account</strong>.
-                        Live mode is AI Assisted in this release: every proposed real order requires your confirmation.
+                        This will connect AI-assisted analysis to your <strong style={{ color: 'var(--text-primary)' }}>real Coinbase account</strong>.
+                        Live mode is AI Assisted: every proposed real order requires your manual confirmation before execution.
                     </p>
-                    <p style={{ margin: 0 }}>
+                    <p style={{ margin: '0 0 0.5rem 0' }}>
                         You are solely responsible for all trades, profits, and losses.
-                        Crypto markets are highly volatile. Only use funds you can afford to lose.
+                        Crypto markets are highly volatile. Only use funds you can afford to lose entirely.
+                        AI signals are not financial advice.
+                    </p>
+                    <p style={{ margin: 0, fontSize: '0.78rem', opacity: 0.85 }}>
+                        🔑 <strong style={{ color: 'var(--text-primary)' }}>Key permissions:</strong> Use Coinbase API keys with <em>trade</em> permission only.
+                        Never grant <em>transfer</em> or <em>withdrawal</em> permissions to these keys.
+                        Estimated fills include 0.6% taker fee + 0.1% slippage — actual Coinbase fees may differ.
                     </p>
                 </div>
 

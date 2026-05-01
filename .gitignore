@@ -32,3 +32,9 @@ server/.env
 
 # Supabase local CLI cache
 supabase/.temp/
+
+# Local debug/audit scripts (may contain E2E env vars)
+debug-audit.cjs
+mobile-audit.cjs
+pnl-audit.cjs
+db-audit.cjs

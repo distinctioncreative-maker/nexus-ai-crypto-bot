@@ -71,10 +71,17 @@ wss.on('connection', async (ws, req) => {
     const requestUrl = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
     let userId = 'local-dev-user';
 
-    // Authenticate if Supabase is configured
-    if (supabase && requestUrl.searchParams.has('token')) {
+    if (supabase) {
+        // Supabase is configured — REQUIRE a valid token on every WS connection.
+        // Previously only checked for token if present, allowing unauthenticated
+        // connections to proceed as 'local-dev-user' in production.
+        const token = requestUrl.searchParams.get('token');
+        if (!token) {
+            ws.close(4001, 'Authentication required');
+            return;
+        }
         try {
-            const { data: { user }, error } = await supabase.auth.getUser(requestUrl.searchParams.get('token'));
+            const { data: { user }, error } = await supabase.auth.getUser(token);
             if (error || !user) {
                 ws.close(4001, 'Invalid token');
                 return;
@@ -84,7 +91,14 @@ wss.on('connection', async (ws, req) => {
             ws.close(4001, 'Auth failed');
             return;
         }
+    } else if (process.env.NODE_ENV === 'production') {
+        // Supabase not configured in production — reject all WS connections.
+        // This prevents unauthenticated access if env vars are accidentally missing.
+        ws.close(4003, 'Auth service not configured');
+        console.error('⛔ WS connection rejected: Supabase not configured in production');
+        return;
     }
+    // else: local dev with no Supabase — allow local-dev-user fallback
 
     // Read initial product from query param (e.g. ?product=ETH-USD)
     const initialProduct = requestUrl.searchParams.get('product') || userStore.getSelectedProduct(userId) || 'BTC-USD';
@@ -163,9 +177,22 @@ wss.on('connection', async (ws, req) => {
 
     // Handle messages from the client
     ws.on('message', async (raw) => {
+        let msg;
         try {
-            const msg = JSON.parse(raw);
+            msg = JSON.parse(raw);
+        } catch {
+            console.warn(`⚠️ WS malformed message from user ${userId} — not valid JSON`);
+            sendData('ERROR', { message: 'Malformed message: expected JSON' });
+            return;
+        }
 
+        if (!msg || typeof msg.type !== 'string') {
+            console.warn(`⚠️ WS message missing type from user ${userId}`);
+            sendData('ERROR', { message: 'Message must have a string type field' });
+            return;
+        }
+
+        try {
             if (msg.type === 'CHANGE_PRODUCT' && msg.payload?.productId) {
                 const newProduct = msg.payload.productId;
                 if (!isSupportedProduct(newProduct)) {
@@ -284,8 +311,9 @@ wss.on('connection', async (ws, req) => {
                     }
                 }
             }
-        } catch (_error) {
-            // Ignore malformed messages
+        } catch (err) {
+            console.error(`⚠️ WS message handler error for user ${userId}:`, err.message);
+            sendData('ERROR', { message: 'Internal error processing message' });
         }
     });
 

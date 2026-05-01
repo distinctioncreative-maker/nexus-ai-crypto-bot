@@ -1,9 +1,17 @@
 const { chromium } = require('playwright');
 
-const APP_URL = 'https://crypto-ai-bot-psi.vercel.app';
-const BACKEND = 'https://kalshi-backend-production-b847.up.railway.app';
-const EMAIL = 'mattcoreloops@gmail.com';
-const PASSWORD = 'Marcano2005$';
+// ⚠️  SECURITY: Never hardcode credentials here. Set these environment variables:
+//   E2E_APP_URL      — e.g. https://crypto-ai-bot-psi.vercel.app
+//   E2E_BACKEND_URL  — e.g. https://kalshi-enterprise-production.up.railway.app
+//   E2E_EMAIL        — test account email
+//   E2E_PASSWORD     — test account password (never commit this value)
+//
+// NOTE: If credentials were previously hardcoded in this file and committed,
+// rotate the affected account password immediately.
+const APP_URL  = process.env.E2E_APP_URL      || (() => { console.error('❌ E2E_APP_URL not set'); process.exit(1); })();
+const BACKEND  = process.env.E2E_BACKEND_URL  || (() => { console.error('❌ E2E_BACKEND_URL not set'); process.exit(1); })();
+const EMAIL    = process.env.E2E_EMAIL        || (() => { console.error('❌ E2E_EMAIL not set'); process.exit(1); })();
+const PASSWORD = process.env.E2E_PASSWORD     || (() => { console.error('❌ E2E_PASSWORD not set'); process.exit(1); })();
 
 const ok   = (msg) => console.log(`  ✅ ${msg}`);
 const fail = (msg) => console.log(`  ❌ ${msg}`);
@@ -70,7 +78,7 @@ const warn = (msg) => console.log(`  ⚠️  ${msg}`);
     await emailInput.fill(EMAIL);
     await page.locator('input[type="password"]').fill(PASSWORD);
     await page.getByRole('button', { name: /sign in/i }).click();
-    info(`Signing in as ${EMAIL}…`);
+    info(`Signing in as ${EMAIL}… (password redacted)`);
 
     // Wait for either setup wizard or dashboard
     await page.waitForSelector(

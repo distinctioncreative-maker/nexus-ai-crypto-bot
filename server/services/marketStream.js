@@ -389,6 +389,11 @@ function startUserStream(userId, broadcastFn, initialProduct, initialWatchlist) 
     setProduct(selectedProduct).then(() => broadcastEngineState(userId, broadcastFn));
 
     const interval = setInterval(async () => {
+        // Declare `now` at the top of the callback — it is used later in the
+        // kill-switch throttle check (lines ~448/457) which is ABOVE the original
+        // declaration site. `const` in the temporal dead zone throws ReferenceError
+        // when the kill switch is active, crashing the interval silently.
+        const now = Date.now();
         const data = getProductData(selectedProduct);
         if (data.price <= 0) return;
 
@@ -488,8 +493,6 @@ function startUserStream(userId, broadcastFn, initialProduct, initialWatchlist) 
                 }
             }
         }
-
-        const now = Date.now();
 
         if (engine.engineStatus === 'STOPPED') {
             if (now % 10000 < 2200) {
