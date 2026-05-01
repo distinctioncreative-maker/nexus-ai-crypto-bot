@@ -124,7 +124,7 @@ export default function AuthPage({ onAuth }) {
             </div>
 
             <div className="auth-footer">
-                <Sparkles size={14} /> Encrypted In-Memory Architecture
+                <Sparkles size={14} /> AI-assisted paper trading — not financial advice
             </div>
         </div>
     );

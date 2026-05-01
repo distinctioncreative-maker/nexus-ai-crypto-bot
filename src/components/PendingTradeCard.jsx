@@ -32,6 +32,7 @@ export default function PendingTradeCard() {
     if (!pendingTrade || tradingMode !== 'AI_ASSISTED') return null;
 
     const isBuy = pendingTrade.side === 'BUY';
+    const isLiveTrade = !!pendingTrade.isLive;
     const accentColor = isBuy ? 'var(--accent-green)' : 'var(--accent-red)';
     const tradeValue = (customAmount || pendingTrade.amount) * pendingTrade.price;
     const timerPct = (timeLeft / 60) * 100;
@@ -64,8 +65,17 @@ export default function PendingTradeCard() {
                                 {pendingTrade.side} {pendingTrade.product}
                             </span>
                         </div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                            AI Assisted — Your confirmation required
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            AI-assisted analysis — user-confirmed execution
+                            {isLiveTrade ? (
+                                <span style={{ fontSize: '0.62rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(255,69,58,0.2)', color: 'var(--accent-red)', border: '1px solid rgba(255,69,58,0.4)', letterSpacing: '0.06em' }}>
+                                    LIVE ORDER
+                                </span>
+                            ) : (
+                                <span style={{ fontSize: '0.62rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(10,132,255,0.15)', color: 'var(--accent-blue)', border: '1px solid rgba(10,132,255,0.3)', letterSpacing: '0.06em' }}>
+                                    PAPER SIM
+                                </span>
+                            )}
                         </div>
                     </div>
                     {timedOut ? (
@@ -94,7 +104,7 @@ export default function PendingTradeCard() {
                 {/* Trade details */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
                     {[
-                        ['Price', `$${pendingTrade.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}`],
+                        ['Est. Fill Price', `$${pendingTrade.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}`],
                         ['Est. Value', `$${tradeValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`],
                         ['Confidence', `${pendingTrade.confidence}%`],
                         ...(fearGreed ? [['Fear & Greed', `${fearGreed.value}/100`]] : []),
@@ -145,6 +155,12 @@ export default function PendingTradeCard() {
                         onChange={e => setCustomAmount(parseFloat(e.target.value))}
                         style={{ width: '100%', accentColor: accentColor }}
                     />
+                </div>
+
+                <div style={{ marginBottom: '0.75rem', fontSize: '0.65rem', color: 'var(--text-secondary)', opacity: 0.65, textAlign: 'center', lineHeight: 1.4 }}>
+                    {isLiveTrade
+                        ? 'Real Coinbase order — actual fill price and fees may differ from estimates. Not financial advice.'
+                        : 'Paper trading simulation — virtual funds only. Includes ~0.6% taker fee + 0.1% slippage estimate.'}
                 </div>
 
                 {!wsConnected && (

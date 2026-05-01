@@ -8,7 +8,8 @@ let deliberateClose = false;
 let wasDisconnected = false;
 
 export const initWebSocket = async () => {
-    if (ws && ws.readyState === WebSocket.OPEN) return;
+    // Guard against creating a second connection while one is still connecting or open
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
     deliberateClose = false;
 
     const token = await getAccessToken();
@@ -31,7 +32,14 @@ export const initWebSocket = async () => {
     };
 
     ws.onmessage = (event) => {
-        const message = JSON.parse(event.data);
+        let message;
+        try {
+            message = JSON.parse(event.data);
+        } catch {
+            console.warn('WS: received non-JSON message — ignoring');
+            return;
+        }
+        if (!message || typeof message.type !== 'string') return;
         const store = useStore.getState();
 
         switch (message.type) {
@@ -265,8 +273,12 @@ export const sendSituationRoomQuery = (message, history, onAgent, onDone) => {
 export const sendEngineStatusChange = (engineStatus) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'SET_ENGINE_STATUS', payload: { engineStatus } }));
+        // Optimistically update local state only when WS is connected — avoids UI/backend
+        // disagreement where the engine button shows "running" but the backend never received it
+        useStore.getState().setEngineStatus(engineStatus);
+    } else {
+        console.warn('sendEngineStatusChange: WebSocket not connected, engine state not changed');
     }
-    useStore.getState().setEngineStatus(engineStatus);
 };
 
 export const sendWatchlistUpdate = (products) => {

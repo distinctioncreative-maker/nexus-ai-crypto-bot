@@ -116,7 +116,7 @@ export default function SituationRoom() {
         } catch {}
         return [{
             id: ++msgId, type: 'oracle', text:
-                `Quant Oracle online. I'm watching ${selectedProduct || 'BTC-USD'} and all your agent signals continuously. Ask me anything about the market, your positions, or what the agents are learning.`,
+                `Quant Oracle online. I'm watching ${selectedProduct || 'BTC-USD'} and all your agent signals continuously. Ask me anything about the market, your positions, or what the agents are learning.\n\nℹ AI-assisted analysis only — not financial advice. Paper trading simulation uses virtual funds.`,
             isNew: false,
         }];
     });
@@ -188,7 +188,7 @@ export default function SituationRoom() {
         localStorage.removeItem(STORAGE_KEY);
         setMessages([{
             id: ++msgId, type: 'oracle',
-            text: `New session. Monitoring ${selectedProduct || 'BTC-USD'}. What do you want to know?`,
+            text: `New session. Monitoring ${selectedProduct || 'BTC-USD'}. What do you want to know?\n\nℹ AI-assisted analysis only — not financial advice.`,
             isNew: true,
         }]);
     };
