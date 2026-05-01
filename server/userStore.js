@@ -507,12 +507,13 @@ class UserStore {
         // Persist trade to Supabase (fire-and-forget)
         getPersistence().saveTrade(getSupabase(), userId, trade).catch(error => console.warn('saveTrade failed:', error.message));
 
-        // Persist balance + holdings atomically so server restarts don't cause ghost positions
+        // Persist balance + holdings + cooldowns atomically so restarts don't reset trade timing
         getPersistence().saveTradeState(
             getSupabase(), userId,
             user.paperTradingState.balance,
             user.paperTradingState.assetHoldings,
-            user.productHoldings
+            user.productHoldings,
+            user.lastTradeByProduct
         ).catch(error => console.warn('saveTradeState failed:', error.message));
 
         this.addNotification(userId, {
@@ -642,6 +643,11 @@ class UserStore {
         }
         if (loaded.productHoldings && typeof loaded.productHoldings === 'object') {
             user.productHoldings = loaded.productHoldings;
+        }
+        // Restore cooldown timestamps — prevents the bot from immediately re-buying every
+        // watchlist product after a Railway redeploy (cooldowns reset on each fresh in-memory state)
+        if (loaded.lastTradeByProduct && typeof loaded.lastTradeByProduct === 'object') {
+            user.lastTradeByProduct = loaded.lastTradeByProduct;
         }
 
         // ── In-memory corruption guard ───────────────────────────────────────────

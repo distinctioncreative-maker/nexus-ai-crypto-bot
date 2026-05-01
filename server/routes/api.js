@@ -428,12 +428,14 @@ router.post('/reset-paper-portfolio', authenticate, async (req, res) => {
         user.paperTradingState.trades = [];
         user.paperTradingState.learningHistory = [];
         user.productHoldings = {};
+        user.lastTradeByProduct = {};
 
         // Reset in DB
         if (supabase) {
             await supabase.from('user_settings').upsert({
                 user_id: userId, balance: 100000, asset_holdings: 0,
-                product_holdings: {}, updated_at: new Date().toISOString()
+                product_holdings: {}, last_trade_by_product: {},
+                updated_at: new Date().toISOString()
             }, { onConflict: 'user_id' });
             await supabase.from('paper_trades').delete().eq('user_id', userId);
         }

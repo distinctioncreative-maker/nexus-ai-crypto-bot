@@ -62,7 +62,13 @@ async function loadUserState(supabase, userId) {
         // balance from raw trade history produces deeply negative impossible values.
         const rawBalance = parseFloat(settings.balance);
         let balance = !isNaN(rawBalance) && rawBalance >= 0 ? rawBalance : 100000;
-        const productHoldings = settings.product_holdings || {};
+        const rawHoldings = settings.product_holdings || {};
+        // Extract persisted cooldowns (stored under '_cooldowns' key to avoid schema changes)
+        const lastTradeByProduct = rawHoldings._cooldowns || {};
+        // Strip the internal key before using holdings for anything else
+        const productHoldings = Object.fromEntries(
+            Object.entries(rawHoldings).filter(([k]) => k !== '_cooldowns')
+        );
 
         // Sanity check: detect impossible state.
         // Strategy: use _lastPrice where available (highest accuracy). When _lastPrice is
@@ -134,6 +140,7 @@ async function loadUserState(supabase, userId) {
             riskSettings: settings.risk_settings || {},
             circuitBreaker: settings.circuit_breaker || {},
             productHoldings,
+            lastTradeByProduct: settings.last_trade_by_product || {},
             trades: (trades || []).map(normalizeTradeRow),
             learningHistory: (learning || []).map(r => ({
                 time: r.created_at,
@@ -261,18 +268,27 @@ async function saveStrategies(supabase, userId, strategies) {
 }
 
 /**
- * Persist balance + per-product holdings snapshot atomically after a trade.
- * Lightweight upsert — only updates the fields that change on trade execution.
+ * Persist balance + per-product holdings + cooldown timestamps atomically after a trade.
  * Prevents stale balance/holdings after server restarts mid-session.
+ * lastTradeByProduct is also persisted so cooldowns survive Railway redeploys — without
+ * this, every restart resets all cooldowns and the bot immediately re-buys every watchlist
+ * product, accumulating positions indefinitely across deployments.
  */
-async function saveTradeState(supabase, userId, balance, assetHoldings, productHoldings) {
+async function saveTradeState(supabase, userId, balance, assetHoldings, productHoldings, lastTradeByProduct) {
     if (!supabase) return;
     try {
+        // Embed cooldown timestamps inside product_holdings JSONB to avoid schema changes.
+        // Stored under the reserved key '_cooldowns' which never collides with a product ID
+        // (product IDs are always in the form 'BTC-USD', never starting with '_').
+        const holdingsWithCooldowns = { ...productHoldings };
+        if (lastTradeByProduct && typeof lastTradeByProduct === 'object' && Object.keys(lastTradeByProduct).length > 0) {
+            holdingsWithCooldowns._cooldowns = lastTradeByProduct;
+        }
         await supabase.from('user_settings').upsert({
             user_id: userId,
             balance,
             asset_holdings: assetHoldings,
-            product_holdings: productHoldings,
+            product_holdings: holdingsWithCooldowns,
             updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
     } catch (err) {

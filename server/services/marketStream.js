@@ -276,6 +276,22 @@ async function executeTradeDecision(userId, productId, decision, price, history,
     }
     // ── End cooldown check ────────────────────────────────────────────────────
 
+    // ── Block BUY when already holding this product (FULL_AUTO only) ─────────
+    // Prevents the bot from stacking additional positions on top of an existing
+    // one every time a BUY signal fires during a trend or after a restart.
+    // AI_ASSISTED mode is exempt — the user consciously confirms each trade.
+    if (decision.action === 'BUY' && engine.tradingMode !== 'AI_ASSISTED' && engine.engineStatus !== 'LIVE_RUNNING') {
+        const existingQty = userStore.getProductAssetHoldings(userId, productId);
+        const existingValue = existingQty * price;
+        const rs = user.riskSettings;
+        const maxPositionUSD = (rs.maxSingleOrderUSD || 1000) * 1.5; // allow up to 1.5× max order before blocking
+        if (existingValue > maxPositionUSD) {
+            broadcastFn('AI_STATUS', `[${productId}] BUY skipped — already holding $${existingValue.toFixed(0)} position (max $${maxPositionUSD.toFixed(0)} before adding more)`);
+            return;
+        }
+    }
+    // ── End position check ────────────────────────────────────────────────────
+
     // Apply AI's dynamic TP/SL (only for the selected product to keep settings simple)
     if (productId === user.selectedProduct && (decision.take_profit_pct || decision.stop_loss_pct)) {
         const rs = user.riskSettings;
